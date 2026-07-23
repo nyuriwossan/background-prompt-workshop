@@ -11,7 +11,11 @@ function sceneCore(state: BackgroundState) {
   const s = state.scene;
   const stage = en(sceneData.stages, s.place.mainStage) || "a carefully designed setting";
   const states = words(sceneData.stageStates, s.place.stageState);
-  return states.length ? `${stage.replace(/^a |^an /, "a ")} with a ${states.join(", ")} character` : stage;
+  if (!states.length) return stage;
+  const articleMatch = stage.match(/^(a|an)\s+(.+)$/i);
+  return articleMatch
+    ? `${articleMatch[1]} ${states.join(", ")} ${articleMatch[2]}`
+    : `${states.join(", ")} ${stage}`;
 }
 
 function sceneGroups(state: BackgroundState) {

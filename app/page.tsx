@@ -3,9 +3,10 @@
 import { ChangeEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { enforceExclusions, getAdvice } from "./lib/advisor.ts";
 import type { Advice } from "./lib/advisor.ts";
-import { createDefaultState, optionById, optionsForGroup, presets, sceneData, simpleData } from "./lib/background-data.ts";
-import type { BackgroundMode, BackgroundState, Option } from "./lib/background-data.ts";
+import { createDefaultState, optionById, optionsForGroup, presetGroups, presets, sceneData, simpleData } from "./lib/background-data.ts";
+import type { BackgroundMode, BackgroundState, Option, PresetGroup } from "./lib/background-data.ts";
 import { generatePrompt, japaneseSummary } from "./lib/generator.ts";
+import { resetActiveMode, resetConfirmationMessage } from "./lib/state-utils.ts";
 
 const DRAFT_KEY = "background_prompt_workshop_draft_v1";
 const SAVED_KEY = "background_prompt_workshop_saved_v1";
@@ -48,6 +49,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
+  const [presetGroup, setPresetGroup] = useState<PresetGroup>("recommended");
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -63,7 +65,8 @@ export default function Home() {
 
   const prompt = useMemo(() => generatePrompt(state), [state]);
   const advice = useMemo(() => getAdvice(state), [state]);
-  const modePresets = presets.filter((preset) => preset.mode === state.backgroundMode);
+  const modePresetGroups = presetGroups[state.backgroundMode];
+  const modePresets = presets.filter((preset) => preset.mode === state.backgroundMode && preset.group === presetGroup);
   const scene = state.scene; const simple = state.simple;
   const categories = optionsForGroup(sceneData.categories, scene.place.environmentType);
   const stages = optionsForGroup(sceneData.stages, scene.place.category);
@@ -81,7 +84,10 @@ export default function Home() {
     next = setAtPath(next, "scene.place.category", category); next = setAtPath(next, "scene.place.mainStage", stage); return next;
   });
   const changeCategory = (id: string) => setState((current) => setAtPath(setAtPath(current, "scene.place.category", id), "scene.place.mainStage", optionsForGroup(sceneData.stages, id)[0].id));
-  const changeMode = (mode: BackgroundMode) => setState((current) => ({ ...current, backgroundMode: mode }));
+  const changeMode = (mode: BackgroundMode) => {
+    setState((current) => ({ ...current, backgroundMode: mode }));
+    setPresetGroup("recommended");
+  };
   const applyAdvice = (item: Advice) => {
     if (!item.patch) return; item.patch.multi ? toggle(item.patch.path, item.patch.value) : update(item.patch.path, item.patch.value); setToast("提案を反映しました");
   };
@@ -93,7 +99,12 @@ export default function Home() {
     try { await navigator.clipboard.writeText(prompt); setToast("プロンプトをコピーしました"); }
     catch { const area = document.createElement("textarea"); area.value = prompt; document.body.appendChild(area); area.select(); document.execCommand("copy"); area.remove(); setToast("プロンプトをコピーしました"); }
   };
-  const reset = () => { if (window.confirm("現在の設定を初期状態に戻しますか？")) { setState(createDefaultState()); setToast("初期状態に戻しました"); } };
+  const reset = () => {
+    const modeLabel = state.backgroundMode === "scene" ? "空間背景" : "シンプル背景";
+    if (!window.confirm(resetConfirmationMessage(state.backgroundMode))) return;
+    setState((current) => resetActiveMode(current));
+    setToast(`${modeLabel}の設定を初期状態に戻しました`);
+  };
   const saveDesign = () => {
     const name = saveName.trim() || japaneseSummary(state) || "名称未設定";
     const item: SavedDesign = { id: crypto.randomUUID(), name, savedAt: new Date().toISOString(), state: clone(state) };
@@ -109,7 +120,7 @@ export default function Home() {
       const value = JSON.parse(await file.text());
       if (value.version !== 1) throw new Error("version");
       if (value.type === "background-workshop-library" && Array.isArray(value.saved)) setSaved(value.saved);
-      else if (value.state?.version === 1) setState(enforceExclusions(value.state));
+      else if (value.state?.version === 1) { setState(enforceExclusions(value.state)); setPresetGroup("recommended"); }
       else throw new Error("schema");
       setToast("JSONを読み込みました");
     } catch { setToast("対応していないJSONです"); }
@@ -125,7 +136,16 @@ export default function Home() {
     <main className="shell">
       <section className="intro"><div><span className="eyebrow">SCENE DESIGN TOOL</span><h1>背景を、ひとつの場面として設計する。</h1><p>場所・光・空気・奥行きを日本語で選ぶと、意味の通る英語プロンプトへ組み立てます。</p></div><div className="mode-switch" role="group" aria-label="背景形式"><button type="button" className={state.backgroundMode === "scene" ? "active" : ""} onClick={() => changeMode("scene")}><span>⌂</span><strong>空間背景</strong><small>場所・光・奥行きを設計</small></button><button type="button" className={state.backgroundMode === "simple" ? "active" : ""} onClick={() => changeMode("simple")}><span>◐</span><strong>シンプル背景</strong><small>色・質感・装飾を整える</small></button></div></section>
 
-      <section className="preset-strip"><div className="preset-heading"><div><span>QUICK START</span><strong>プリセットから始める</strong></div><small>選んだあとで自由に調整できます</small></div><div className="preset-list">{modePresets.map((preset) => <button type="button" key={preset.id} onClick={() => applyPreset(preset.id)}><span className="preset-orb" /><strong>{preset.label}</strong><small>{preset.description}</small><b>→</b></button>)}</div></section>
+      <section className="preset-strip">
+        <div className="preset-heading">
+          <div><span>QUICK START</span><strong>プリセットから始める</strong></div>
+          <div className="preset-heading-actions"><small>選んだあとで自由に調整できます</small><button type="button" className="reset-button" onClick={reset}>↻ リセット</button></div>
+        </div>
+        <div className="preset-groups" role="tablist" aria-label="プリセット分類">
+          {modePresetGroups.map((group) => <button type="button" role="tab" aria-selected={presetGroup === group.id} className={presetGroup === group.id ? "is-selected" : ""} key={group.id} onClick={() => setPresetGroup(group.id)}>{group.label}</button>)}
+        </div>
+        <div className="preset-list">{modePresets.map((preset) => <button type="button" key={preset.id} onClick={() => applyPreset(preset.id)}><span className="preset-orb" /><strong>{preset.label}</strong><small>{preset.description}</small><b>→</b></button>)}</div>
+      </section>
 
       <div className="workspace-grid"><section className="builder-column" aria-label="背景設定">
         <div className="column-title"><div><span className="tiny-label">DESIGN</span><h2>{state.backgroundMode === "scene" ? "空間背景を組み立てる" : "背景面を整える"}</h2></div><button type="button" className="text-button" onClick={reset}>↻ リセット</button></div>
@@ -203,7 +223,7 @@ export default function Home() {
 
     {(saveOpen || libraryOpen || outputOpen) && <div className="modal-layer" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) { setSaveOpen(false); setLibraryOpen(false); setOutputOpen(false); } }}>
       {saveOpen && <section className="modal" role="dialog" aria-modal="true" aria-labelledby="save-title"><button className="modal-close" onClick={() => setSaveOpen(false)} aria-label="閉じる">×</button><span className="modal-kicker">SAVE DESIGN</span><h2 id="save-title">この背景設計を保存</h2><p>英語文ではなく、編集できる設計状態を端末に保存します。</p><label>保存名<input autoFocus value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder={japaneseSummary(state)} /></label><button className="primary-button" type="button" onClick={saveDesign}>保存する</button></section>}
-      {libraryOpen && <section className="modal library-modal" role="dialog" aria-modal="true" aria-labelledby="library-title"><button className="modal-close" onClick={() => setLibraryOpen(false)} aria-label="閉じる">×</button><span className="modal-kicker">MY LIBRARY</span><h2 id="library-title">保存した背景設計</h2><div className="library-tools"><button onClick={() => exportJson(true)}>全部を書き出す</button><button onClick={() => importRef.current?.click()}>JSONを読み込む</button></div><div className="saved-list">{saved.length ? saved.map((item) => <article key={item.id}><div><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString("ja-JP")}</small></div><button onClick={() => { setState(clone(item.state)); setLibraryOpen(false); setToast("保存した設計を開きました"); }}>開く</button><button className="danger" onClick={() => setSaved((items) => items.filter((savedItem) => savedItem.id !== item.id))}>削除</button></article>) : <p className="empty-state">まだ保存した設計はありません。</p>}</div></section>}
+      {libraryOpen && <section className="modal library-modal" role="dialog" aria-modal="true" aria-labelledby="library-title"><button className="modal-close" onClick={() => setLibraryOpen(false)} aria-label="閉じる">×</button><span className="modal-kicker">MY LIBRARY</span><h2 id="library-title">保存した背景設計</h2><div className="library-tools"><button onClick={() => exportJson(true)}>全部を書き出す</button><button onClick={() => importRef.current?.click()}>JSONを読み込む</button></div><div className="saved-list">{saved.length ? saved.map((item) => <article key={item.id}><div><strong>{item.name}</strong><small>{new Date(item.savedAt).toLocaleString("ja-JP")}</small></div><button onClick={() => { setState(clone(item.state)); setPresetGroup("recommended"); setLibraryOpen(false); setToast("保存した設計を開きました"); }}>開く</button><button className="danger" onClick={() => setSaved((items) => items.filter((savedItem) => savedItem.id !== item.id))}>削除</button></article>) : <p className="empty-state">まだ保存した設計はありません。</p>}</div></section>}
       {outputOpen && <section className="modal mobile-output-modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={() => setOutputOpen(false)} aria-label="閉じる">×</button><span className="modal-kicker">LIVE OUTPUT</span><h2>背景プロンプト</h2><p className="jp-summary">{japaneseSummary(state)}</p><div className="prompt-box"><p>{prompt}</p></div><button type="button" className="primary-button" onClick={copyPrompt}>プロンプトをコピー</button></section>}
     </div>}
     <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importJson} />

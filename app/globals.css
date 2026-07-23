@@ -58,7 +58,14 @@ button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px 
 .preset-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 14px; }
 .preset-heading span { display: block; margin-bottom: 3px; color: var(--accent); font: 700 9px ui-monospace, monospace; letter-spacing: .18em; }
 .preset-heading strong { font-size: 13px; }
-.preset-heading > small { color: #707c76; font-size: 10px; }
+.preset-heading-actions { display: flex; align-items: center; gap: 12px; }
+.preset-heading-actions small { color: #707c76; font-size: 10px; }
+.reset-button { min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 10px; cursor: pointer; white-space: nowrap; }
+.reset-button:hover { border-color: #56635c; color: var(--text); background: #17201c; }
+.preset-groups { display: flex; gap: 6px; margin: 0 0 11px; padding: 1px 0 4px; overflow-x: auto; scrollbar-width: thin; }
+.preset-groups button { flex: 0 0 auto; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; white-space: nowrap; }
+.preset-groups button:hover { color: var(--text); }
+.preset-groups button.is-selected { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); background: var(--accent-soft); color: var(--accent); }
 .preset-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .preset-list button { position: relative; display: grid; grid-template-columns: 27px 1fr 15px; grid-template-rows: auto auto; column-gap: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #0d1311; text-align: left; cursor: pointer; }
 .preset-list button:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: var(--accent-soft); }
@@ -156,7 +163,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px 
 }
 @media (max-width: 780px) {
   .topbar { height: 58px; }.topbar-inner { padding: 0 16px; }.brand strong { font-size: 13px; }.draft-status { display: none; }.shell { padding: 32px 14px 100px; }.intro { margin-bottom: 26px; }.intro h1 { font-size: 27px; line-height: 1.45; }.intro p { font-size: 12px; }.mode-switch button { grid-template-columns: 25px 1fr; padding: 11px 9px; }.mode-switch small { display: none; }
-  .preset-strip { margin-inline: -14px; padding: 17px 14px; border-radius: 0; border-inline: 0; }.preset-heading > small { display: none; }.preset-list { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 5px; }.preset-list button { flex: 0 0 210px; scroll-snap-align: start; }
+  .preset-strip { margin-inline: -14px; padding: 17px 14px; border-radius: 0; border-inline: 0; }.preset-heading-actions small { display: none; }.preset-heading-actions { gap: 6px; }.reset-button { min-height: 34px; font-size: 11px; }.preset-groups { margin-inline: -2px; padding-inline: 2px; }.preset-list { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 5px; }.preset-list button { flex: 0 0 210px; scroll-snap-align: start; }
   .workspace-grid { display: block; }.output-column { display: none; }.column-title { min-height: 50px; }.section-card > summary { min-height: 68px; padding: 12px; }.section-body { padding: 4px 12px 20px; }.step-number { width: 29px; height: 29px; }.choice-split { grid-template-columns: 1fr; gap: 0; }.chip { min-height: 35px; font-size: 11px; }
   .mobile-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 7px; padding: 8px max(12px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(10,14,12,.94); backdrop-filter: blur(18px); }.mobile-dock button { min-height: 42px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 10px; }.mobile-dock .dock-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 800; }
   .toast { bottom: 72px; width: max-content; max-width: calc(100% - 28px); }.modal-layer { align-items: end; padding: 0; }.modal { width: 100%; max-height: 88vh; border-radius: 18px 18px 0 0; padding: 25px 18px calc(25px + env(safe-area-inset-bottom)); }
