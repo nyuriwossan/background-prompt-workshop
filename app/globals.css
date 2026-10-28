@@ -64,6 +64,8 @@ button:focus-visible, summary:focus-visible, input:focus-visible, label.toggle:f
 .preset-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .preset-heading strong { font-size: 14px; }
 .reset-button { min-height: 34px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.reset-tools { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.reset-help { margin: -4px 0 12px; color: var(--faint); font-size: 11px; line-height: 1.6; }
 .reset-button:hover { color: var(--text); border-color: #56635c; }
 .preset-groups { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .preset-groups button { padding: 6px 12px; min-height: 32px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; white-space: nowrap; }

@@ -7,9 +7,9 @@ import type { Advice } from "./lib/advisor.ts";
 import { createDefaultState, optionById, optionsForGroup, presetGroups, presets, sceneData, simpleData } from "./lib/background-data.ts";
 import type { BackgroundMode, BackgroundState, Option, PresetGroup } from "./lib/background-data.ts";
 import { generateOutput, japaneseSummary, negativeItemAvailability, negativeOptions, negativeSupport } from "./lib/generator.ts";
-import { exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode, resetConfirmationMessage } from "./lib/state-utils.ts";
+import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage, exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode } from "./lib/state-utils.ts";
 import type { SavedDesign } from "./lib/state-utils.ts";
-import { dynamicMotions, viewData, viewRecipes } from "./lib/view-data.ts";
+import { dynamicMotions, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "./lib/view-data.ts";
 import { getViewAvailability, stageProfile, viewSummary } from "./lib/view-rules.ts";
 
 // 保存キーは v1 から変えない（既存の保存を見失わないため）。中身は読み込み時に v2 へ移行する
@@ -101,6 +101,8 @@ export default function Home() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [structureQuery, setStructureQuery] = useState("");
   const [showAllStructures, setShowAllStructures] = useState(false);
+  /** リセット時に設定欄を作り直し、折りたたみ・入力中の検索語などの一時的な表示状態も初期化する */
+  const [builderKey, setBuilderKey] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLElement>(null);
 
@@ -173,8 +175,8 @@ export default function Home() {
     setToast(`「${preset.label}」を読み込みました`);
   };
   const applyRecipe = (id: string) => {
-    const recipe = viewRecipes.find((item) => item.id === id); if (!recipe) return;
-    setState((current) => ({ ...current, scene: { ...current.scene, view: { ...current.scene.view, ...clone(recipe.view), mode: "custom" } } }));
+    const next = viewFromRecipe(id); if (!next) return;
+    setState((current) => ({ ...current, scene: { ...current.scene, view: next } }));
   };
   const copy = async (text: string, message: string) => {
     try { await navigator.clipboard.writeText(text); }
@@ -182,11 +184,20 @@ export default function Home() {
     setToast(message);
   };
   const copyPrompt = () => copy(result.positive, "プロンプトをコピーしました");
-  const reset = () => {
-    const modeLabel = state.backgroundMode === "scene" ? "空間背景" : "シンプル背景";
-    if (!window.confirm(resetConfirmationMessage(state.backgroundMode))) return;
+  const clearTransientUi = () => {
+    setPlaceQuery(""); setStructureQuery(""); setShowAllStructures(false); setBuilderKey((key) => key + 1);
+  };
+  const resetToDefaults = () => {
+    if (!window.confirm(defaultsConfirmationMessage(state.backgroundMode))) return;
     setState((current) => resetActiveMode(current));
-    setToast(`${modeLabel}の設定を初期状態に戻しました`);
+    clearTransientUi();
+    setToast("初期設定に戻しました");
+  };
+  const clearSelections = () => {
+    if (!window.confirm(clearConfirmationMessage(state.backgroundMode))) return;
+    setState((current) => clearActiveMode(current));
+    clearTransientUi();
+    setToast("選択をクリアしました");
   };
   const saveDesign = () => {
     const name = saveName.trim() || japaneseSummary(state) || "名称未設定";
@@ -237,6 +248,13 @@ export default function Home() {
     .filter((item) => item.id === "main_stage" || item.label !== stageLabel || view.targets.includes(item.id))
     .map((item) => (item.id === "main_stage" ? { ...item, label: `${stageLabel}（選んだ場所）` } : item));
 
+  // 動きの演出：今の動きに合うものを先に並べ、画風に影響しやすいものには「※」を付ける（自動では入れない）
+  const recommendedEffects = motionProfiles[view.motion]?.recommended || [];
+  const effectOptions = [...viewData.motionEffects]
+    .sort((a, b) => (recommendedEffects.includes(a.id) ? recommendedEffects.indexOf(a.id) : 99) - (recommendedEffects.includes(b.id) ? recommendedEffects.indexOf(b.id) : 99))
+    .map((item) => ({ id: item.id, label: `${item.label}${item.note ? "※" : ""}` }));
+  const effectNote = [recommendedEffects.length ? `この動きに合う演出：${recommendedEffects.map((id) => labelOf(viewData.motionEffects, id)).join("・")}` : "", "入れすぎると画面が騒がしくなります。※は画風や線画に影響しやすい演出です。"].filter(Boolean).join("　");
+
   const relationOptions = state.backgroundMode === "scene" ? sceneData.relations : simpleData.relations;
   const relationValue = state.backgroundMode === "scene" ? scene.subjectRelation : simple.subjectRelation;
 
@@ -286,14 +304,20 @@ export default function Home() {
       <section className="intro"><div><h1>背景を、<wbr />ひとつの場面として<wbr />設計する。</h1><p>場所を選び、どこから・何を見ているかを決めると、生成先に合わせた英語プロンプトに組み立てます。</p></div><div className="mode-switch" role="group" aria-label="背景形式"><button type="button" className={state.backgroundMode === "scene" ? "active" : ""} aria-pressed={state.backgroundMode === "scene"} onClick={() => changeMode("scene")}><span aria-hidden>⌂</span><strong>空間背景</strong><small>場所・見え方・光</small></button><button type="button" className={state.backgroundMode === "simple" ? "active" : ""} aria-pressed={state.backgroundMode === "simple"} onClick={() => changeMode("simple")}><span aria-hidden>◐</span><strong>シンプル背景</strong><small>色・柄・質感</small></button></div></section>
 
       <section className="preset-strip" aria-label="プリセット">
-        <div className="preset-heading"><strong>プリセットから始める</strong><button type="button" className="reset-button" onClick={reset}>↻ この形式をリセット</button></div>
+        <div className="preset-heading"><strong>プリセットから始める</strong>
+          <div className="reset-tools" role="group" aria-label={`${state.backgroundMode === "scene" ? "空間背景" : "シンプル背景"}をやり直す`}>
+            <button type="button" className="reset-button" onClick={clearSelections} aria-describedby="reset-help">選択をクリア</button>
+            <button type="button" className="reset-button" onClick={resetToDefaults} aria-describedby="reset-help">初期設定に戻す</button>
+          </div>
+        </div>
+        <p className="reset-help" id="reset-help">「選択をクリア」は{state.backgroundMode === "scene" ? "場所" : "スタイルとメインカラー"}だけ残して他の選択を外します。「初期設定に戻す」は作例の状態（選択あり）に戻します。</p>
         <div className="preset-groups" role="tablist" aria-label="プリセット分類">
           {modePresetGroups.map((group) => <button type="button" role="tab" aria-selected={presetGroup === group.id} className={presetGroup === group.id ? "is-selected" : ""} key={group.id} onClick={() => setPresetGroup(group.id)}>{group.label}</button>)}
         </div>
         <div className="preset-list">{modePresets.map((preset) => <button type="button" key={preset.id} onClick={() => applyPreset(preset.id)}><strong>{preset.label}</strong><small>{preset.description}</small></button>)}</div>
       </section>
 
-      <div className="workspace-grid"><div className="builder-column">
+      <div className="workspace-grid"><div className="builder-column" key={builderKey}>
         {state.backgroundMode === "scene" ? <>
           <Step index={1} title="どんな場所？" summary={placeSummary}>
             <label className="search-field"><span className="search-icon" aria-hidden>⌕</span><input type="search" value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="場所を探す（例：じんじゃ、海中、コンビニ）" aria-label="場所を検索" /></label>
@@ -335,7 +359,7 @@ export default function Home() {
               {availability.altitudeActive && <ChoiceGroup label="どのくらいの高さ？" options={viewData.altitudes} value={view.altitude} onChange={(id) => update("scene.view.altitude", id)} disabled={availability.disabled.altitude} />}
               <ChoiceGroup label="どのくらい離れている？" options={viewData.distances} value={view.distance} onChange={(id) => update("scene.view.distance", id)} />
               <ChoiceGroup label="動きはある？" options={viewData.motions} value={view.motion} onChange={(id) => update("scene.view.motion", id)} disabled={availability.disabled.motion} note="人物の動きではなく、見ている視点の動きです。" />
-              {dynamicMotions.includes(view.motion) && !availability.disabled.motion[view.motion] && <ChoiceGroup label="動きの演出" options={viewData.motionEffects} value={view.motionEffects} multi max={3} optional onChange={(id) => toggle("scene.view.motionEffects", id, 3)} />}
+              {dynamicMotions.includes(view.motion) && !availability.disabled.motion[view.motion] && <ChoiceGroup label="動きの演出" options={effectOptions} value={view.motionEffects} multi max={3} optional onChange={(id) => toggle("scene.view.motionEffects", id, 3)} note={effectNote} />}
               <details className="inline-more" open={Boolean(view.frame || view.lens)}><summary>手前の枠・画角{view.frame || view.lens ? `：${joinJa([view.frame ? labelOf(viewData.frames, view.frame) : "", shown(labelOf(viewData.lenses, view.lens))])}` : "（任意）"}</summary>
                 <ChoiceGroup label="何越しに見る？" options={viewData.frames} value={view.frame} onChange={(id) => update("scene.view.frame", id)} optional />
                 {view.frame === "window" && <ChoiceGroup label="窓の種類" options={viewData.windowKinds} value={view.frameDetail} onChange={(id) => update("scene.view.frameDetail", id)} />}

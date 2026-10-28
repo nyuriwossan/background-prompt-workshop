@@ -75,8 +75,13 @@ export function getViewAvailability(state: BackgroundState): ViewAvailability {
     disabled.motion.falling = "水中では「降下中」を使います";
     disabled.motion.flying = "水中では「浮遊中」「移動中」を使います";
     disabled.motion.gliding = "水中では「浮遊中」「移動中」を使います";
+    disabled.motion.cloud_break = "雲を抜けるのは空中の視点だけです";
   } else if (level !== "elevated" && level !== "aerial") {
     disabled.motion.falling = "落下には、高台・塔・空中など高さのある位置が必要です";
+    disabled.motion.dive = "急降下には、高台・塔・空中など高さのある位置が必要です";
+    disabled.motion.cloud_break = "雲を抜けるのは空中の視点だけです";
+  } else if (level === "elevated") {
+    disabled.motion.cloud_break = "雲を抜けるのは空中の視点だけです";
   }
 
   if (view.mode !== "custom") {
@@ -112,6 +117,16 @@ export function getViewAvailability(state: BackgroundState): ViewAvailability {
   if (view.targets.includes("water_surface") && level === "underwater" && (gaze === "down_diagonal" || gaze === "straight_down")) notices.push({ id: "surface-below", kind: "warning", text: "水中から見ると水面は上にあります。視線を上向きにすると自然です。" });
   if (level === "aerial" && gaze === "straight_up" && !view.targets.every((id) => id === "sky_clouds")) notices.push({ id: "aerial-up", kind: "warning", text: "空中から真上を見ると、地上の景色はほとんど写りません。" });
   if (view.frame === "water_surface" && level !== "underwater" && level !== "surface") notices.push({ id: "frame-water", kind: "warning", text: "「水面越し」は水中か船上から見るときに自然です。" });
+  // ---- 速い動きの組み合わせ（成立はするが、狙いが伝わりにくいもの） ----
+  const downward = ["down_diagonal", "straight_down", "feet"].includes(gaze);
+  if ((motion === "falling" || motion === "dive") && !downward) notices.push({ id: "motion-gaze", kind: "warning", text: "落下・急降下は、視線を下向き（真下・斜め下）にすると動きの向きが伝わりやすくなります。" });
+  if (motion === "cloud_break" && !downward) notices.push({ id: "cloud-gaze", kind: "warning", text: "雲を抜けて地上が現れる場面は、視線を下向きにすると伝わりやすくなります。" });
+  if (["falling", "dive", "cloud_break"].includes(motion) && view.distance === "very_far") notices.push({ id: "motion-distance", kind: "warning", text: "超遠景だと静かな俯瞰（地図のような絵）になりやすく、地表が迫る感じが弱まります。遠景か中距離がおすすめです。" });
+  if (["falling", "dive"].includes(motion) && altitude === "above_clouds") notices.push({ id: "motion-altitude", kind: "warning", text: "雲上からの落下は地上が小さくなりがちです。「雲を抜けて降下」も検討してください。" });
+  const noisy = motionEffects.map((id) => viewData.motionEffects.find((item) => item.id === id)).filter((item) => item?.note);
+  if (noisy.length) notices.push({ id: "effects-style", kind: "warning", text: `「${noisy.map((item) => item!.label).join("・")}」は、画風や線画に影響することがあります。` });
+  if (motionEffects.includes("rising_bubbles") && level !== "underwater") notices.push({ id: "bubbles-dry", kind: "warning", text: "「立ちのぼる泡」は水中の視点向けの演出です。" });
+  if (view.lens === "fisheye") notices.push({ id: "fisheye-style", kind: "warning", text: "魚眼は遠近が強く曲がり、画風に影響することがあります。" });
   if (view.frame === "window" && level === "aerial") notices.push({ id: "aerial-window", kind: "warning", text: "空中で窓越しの設定です。乗り物や飛行船の窓として描かれやすくなります。" });
 
   return {

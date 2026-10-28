@@ -116,6 +116,106 @@ with sync_playwright() as p:
     check(not errors, "ページエラーなし " + "; ".join(errors))
     ctx.close()
 
+    # ---------------- リセット（選択をクリア／初期設定に戻す） ----------------
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.add_init_script("""(() => { if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1'); localStorage.clear(); })()""")
+    page.goto(URL)
+    page.wait_for_selector(".output-card")
+    step3 = page.locator(".step").nth(2)
+
+    def selected_in_step3():
+        texts = step3.locator(".chip.is-selected:not(.is-unset)").all_inner_texts()
+        return [t.replace("✓", "").strip() for t in texts if t.replace("✓", "").strip() not in ("指定なし", "なし")]
+
+    # 保存一覧に1件入れておく（リセットで消えないことの確認用）
+    page.locator(".output-secondary button", has_text="この設計を保存").click()
+    page.locator(".modal input").fill("リセット前の保存")
+    page.locator(".modal .primary-button").click()
+
+    # STEP3で複数選び、セクションを閉じる
+    for title, chip in [("建物や周囲のもの", "落ち葉"), ("光・色・雰囲気", "壮大"), ("奥行き・幻想演出", "浮遊する光")]:
+        section = step3.locator("details.section-card", has_text=title)
+        section.locator("summary").click()
+        section.locator(".chip", has_text=chip).first.click()
+        section.locator("summary").click()
+    page.get_by_label("構成物を探す").count()  # 閉じた状態でも存在しない入力は問題にしない
+    before = selected_in_step3()
+    check(len(before) >= 10, "クリア前はSTEP3に多くの選択がある（%d件）" % len(before))
+
+    # キャンセルでは何も変わらない
+    prompt_before = prompt_text(page)
+    page.once("dialog", lambda d: d.dismiss())
+    page.locator(".reset-tools button", has_text="選択をクリア").click()
+    check(prompt_text(page) == prompt_before, "確認でキャンセルすると何も変わらない")
+
+    page.once("dialog", lambda d: d.accept())
+    page.locator(".reset-tools button", has_text="選択をクリア").click()
+    check(step3.locator("details.section-card[open]").count() == 0, "クリア後はセクションが閉じた状態に戻る")
+    for summary in step3.locator("details.section-card > summary").all():
+        summary.click()
+    after = selected_in_step3()
+    check(after == [], "セクションを開き直しても任意の選択が残っていない " + "、".join(after))
+    cleared_prompt = prompt_text(page)
+    check(cleared_prompt.startswith("a narrow back alley") and "rain" not in cleared_prompt and "neon" not in cleared_prompt and "leaves" not in cleared_prompt, "プロンプトに場所以外の設定が残らない：" + cleared_prompt)
+    check(page.locator(".step").nth(1).locator(".segmented button.active").inner_text() == "標準の見え方", "見え方は標準に戻る")
+    page.reload()
+    page.wait_for_selector(".output-card")
+    check(prompt_text(page) == cleared_prompt, "再読み込み後もクリアした状態が保たれる")
+    for summary in page.locator(".step").nth(2).locator("details.section-card > summary").all():
+        summary.click()
+    check(selected_in_step3() == [], "再読み込み後もSTEP3の選択は解除されたまま")
+    page.get_by_role("button", name="保存一覧").click()
+    check(page.locator(".saved-list article", has_text="リセット前の保存").count() == 1, "保存一覧の設計は消えない")
+    page.locator(".modal-close").click()
+
+    # 初期設定に戻す（作例の状態に戻る）
+    page.once("dialog", lambda d: d.accept())
+    page.locator(".reset-tools button", has_text="初期設定に戻す").click()
+    check(prompt_text(page).startswith("a rain-soaked narrow back alley"), "「初期設定に戻す」で作例の状態に戻る")
+
+    # シンプル背景
+    page.get_by_role("button", name="シンプル背景").first.click()
+    page.locator(".preset-groups button", has_text="プリクラ風").click()
+    page.locator(".preset-list button", has_text="レースとリボン").click()
+    page.once("dialog", lambda d: d.accept())
+    page.locator(".reset-tools button", has_text="選択をクリア").click()
+    for summary in page.locator(".step").nth(2).locator("details.section-card > summary").all():
+        summary.click()
+    simple_selected = [t.replace("✓", "").strip() for t in page.locator(".step").nth(2).locator(".chip.is-selected:not(.is-unset)").all_inner_texts()]
+    check(simple_selected == ["なし"], "シンプル背景のクリア後は質感なし・装飾なし " + "、".join(simple_selected))
+    simple_prompt = prompt_text(page)
+    check(all(word not in simple_prompt for word in ("lace", "ribbon", "glow", "radial", "white")), "シンプル背景のプロンプトに装飾・質感が残らない：" + simple_prompt)
+    page.reload()
+    page.wait_for_selector(".output-card")
+    check(prompt_text(page) == simple_prompt, "シンプル背景も再読み込み後にクリア状態が保たれる")
+    check(not errors, "リセット操作中のページエラーなし " + "; ".join(errors))
+    ctx.close()
+
+    # ---------------- 動きのある見え方（スマホ） ----------------
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    page.goto(URL)
+    page.evaluate("localStorage.clear()")
+    page.reload()
+    page.wait_for_selector(".output-card")
+    page.locator(".preset-groups button", has_text="見え方の例").click()
+    page.locator(".preset-list button", has_text="空から都市へ落下").click()
+    page.locator(".output-card .chip", has_text="PIXAI").first.click()
+    fall = prompt_text(page)
+    check(fall.startswith("A view from midair at a moderate altitude, as the viewpoint plunges straight down"), "落下プリセットは移動の向きが先頭に来る")
+    check("falling" not in fall.lower(), "落下プリセットに falling を使わない")
+    effects = page.locator(".step").nth(1).locator("fieldset", has_text="動きの演出")
+    check(effects.locator(".chip").first.inner_text().startswith("奥へ収束する建物"), "動きに合う演出が先頭に並ぶ")
+    page.locator(".step").nth(1).screenshot(path=str(OUT / "mobile-5-falling.png"))
+    # 静的な構図を読み込むと、動きや演出は引き継がれない
+    page.locator(".preset-list button", has_text="上空から城全体を見る").click()
+    check("as the viewpoint" not in prompt_text(page) and "foreshortening" not in prompt_text(page), "静的な構図に動きが混ざらない")
+    check(page.locator(".step").nth(1).locator("fieldset", has_text="動きの演出").count() == 0, "静止の構図では演出欄を出さない")
+    ctx.close()
+
     # ---------------- PC ----------------
     ctx = browser.new_context(viewport={"width": 1440, "height": 960})
     page = ctx.new_page()

@@ -2,7 +2,7 @@ import { optionById, sceneData, simpleData } from "./background-data.ts";
 import type { BackgroundState, Option, OutputStyle } from "./background-data.ts";
 import { migrateState } from "./state-utils.ts";
 import { getViewAvailability } from "./view-rules.ts";
-import { viewData } from "./view-data.ts";
+import { motionProfiles, viewData } from "./view-data.ts";
 import type { ViewOption, ViewState } from "./view-data.ts";
 
 type AnyOption = Option | ViewOption;
@@ -132,18 +132,51 @@ export function buildViewSentence(state: BackgroundState, view: ViewState): View
   const windowKind = en(viewData.windowKinds, view.frameDetail) || "a window";
   const frame = en(viewData.frames, view.frame).replace("{w}", windowKind);
   const motionTarget = targetText || core;
-  const motion = en(viewData.motions, view.motion).replace("{t}", motionTarget);
+  const motionTemplate = en(viewData.motions, view.motion);
+  const motion = motionTemplate.replace("{t}", motionTarget);
   const distance = en(viewData.distances, view.distance);
+  const profile = motionProfile(view);
+  if (profile) {
+    // 速い動きは「どこから → どう動いて → どこを見て → 画面にどう表れるか」の順に書き、移動の向きを前に出す。
+    // 動きの文が対象を含む場合（急降下・高速通過）は、視線の句で対象を繰り返さない。
+    const gazeForMotion = motionTemplate.includes("{t}") && view.gaze !== "feet" ? GAZE_BARE[view.gaze] || "" : gaze;
+    const lead = [where, motion, gazeForMotion, distance, profile.cue, frame].filter(Boolean).join(", ");
+    return { lead, effects: words(viewData.motionEffects, view.motionEffects), stageMentioned: stageInWhere || includesMain };
+  }
   const lead = [where, gaze, frame, motion, distance].filter(Boolean).join(", ");
   return { lead, effects: words(viewData.motionEffects, view.motionEffects), stageMentioned: stageInWhere || includesMain };
 }
 
+type GazeDirection = "down" | "up" | "level";
+const gazeDirection = (gaze: string): GazeDirection => (["up_diagonal", "straight_up"].includes(gaze) ? "up" : ["forward", "horizon_far"].includes(gaze) ? "level" : "down");
+
+/** 速い動きの向きと遠近の手がかり（視線の向きで使い分ける）。対象外の動きは null */
+export function motionProfile(view: ViewState): { cue: string; tags: string; short: string } | null {
+  const profile = motionProfiles[view.motion];
+  if (!profile) return null;
+  const direction = gazeDirection(view.gaze);
+  if (direction === "up") return { cue: profile.cueUp ?? "", tags: profile.tagsUp ?? "", short: profile.short };
+  if (direction === "level") return { cue: profile.cueLevel ?? profile.cue ?? "", tags: profile.tagsLevel ?? profile.tags ?? "", short: profile.short };
+  return { cue: profile.cue ?? "", tags: profile.tags ?? "", short: profile.short };
+}
+
+/** タグ系の詳細版に添える見え方の句。速い動きは短い句だけにし、長い自然文に頼らない */
+function viewPhraseForTags(view: ViewState, lead: string | undefined) {
+  if (!lead) return "";
+  const profile = motionProfile(view);
+  return profile ? profile.short : `view ${lead}`;
+}
+
 /** タグ系向けの見え方タグ（場所の名前は含めない） */
 function viewTags(state: BackgroundState, view: ViewState): string[] {
+  const profile = motionProfile(view);
+  // 速い動きでは「真上からの平面図」に寄らないよう、top-down view を外して遠近のタグを優先する
+  const gazeTag = profile ? tagOf(viewData.gazes, view.gaze).split(/,\s*/).filter((tag) => tag !== "top-down view").join(", ") : tagOf(viewData.gazes, view.gaze);
   const tags = [
     view.altitude ? tagOf(viewData.altitudes, view.altitude) : "",
     viewData.vantages.find((item) => item.id === view.vantage)?.tag || "",
-    tagOf(viewData.gazes, view.gaze),
+    gazeTag,
+    profile?.tags || "",
     ...view.targets.filter((id) => id !== "main_stage").map((id) => viewData.viewTargets.find((item) => item.id === id)?.tag || ""),
     viewData.distances.find((item) => item.id === view.distance)?.tag || "",
     viewData.motions.find((item) => item.id === view.motion)?.tag || "",
@@ -283,7 +316,7 @@ function pixaiTagScene(state: BackgroundState, style: OutputStyle, active: ViewS
   const view = active ? buildViewSentence(state, active) : null;
   const items = style === "short"
     ? [b.relation, b.place, ...b.view, ...b.world, ...b.environment, ...b.structures, ...b.creatures, ...b.light, ...b.atmosphere]
-    : [b.relation, b.place, ...b.view, view ? `view ${view.lead}` : "", ...b.world, ...b.environment, ...b.structures, ...b.creatures, ...b.light, ...b.lightDetail, ...b.atmosphere, ...b.atmosphereDetail, ...b.space, ...b.density];
+    : [b.relation, b.place, ...b.view, active ? viewPhraseForTags(active, view?.lead) : "", ...b.world, ...b.environment, ...b.structures, ...b.creatures, ...b.light, ...b.lightDetail, ...b.atmosphere, ...b.atmosphereDetail, ...b.space, ...b.density];
   return uniqueTags(items.filter(Boolean)).join(", ");
 }
 
@@ -298,7 +331,7 @@ function novelaiScene(state: BackgroundState, style: OutputStyle, active: ViewSt
     ? [b.place, ...b.world, ...b.environment, ...b.structures, ...b.creatures, ...b.light, ...b.atmosphere, ...b.space.slice(0, 1)]
     : [b.place, ...b.world, ...b.environment, ...b.structures, ...b.creatures, ...b.light, ...b.lightDetail, ...b.atmosphere, ...b.atmosphereDetail, ...b.space, ...b.density];
   const restTags = uniqueTags(rest.filter(Boolean)).filter((tag) => !viewTagsList.includes(tag) && !relation.includes(tag));
-  const phrase = style === "detailed" && view ? [`view ${view.lead}`] : [];
+  const phrase = style === "detailed" && view && active ? [viewPhraseForTags(active, view.lead)] : [];
   return [...relation, viewBlock, ...phrase, ...restTags].filter(Boolean).join(", ");
 }
 

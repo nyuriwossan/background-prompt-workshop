@@ -5,8 +5,8 @@ import { enforceExclusions, getAdvice } from "../app/lib/advisor.ts";
 import { createDefaultState, presetGroups, presets, sceneData, simpleData } from "../app/lib/background-data.ts";
 import type { BackgroundState, Platform, PixaiModel } from "../app/lib/background-data.ts";
 import { buildViewSentence, generateOutput, generatePrompt, generateScenePrompt, generateSimplePrompt, negativeSupport } from "../app/lib/generator.ts";
-import { exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode, resetConfirmationMessage } from "../app/lib/state-utils.ts";
-import { viewData, viewRecipes } from "../app/lib/view-data.ts";
+import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage, exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode, resetConfirmationMessage } from "../app/lib/state-utils.ts";
+import { createDefaultView, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "../app/lib/view-data.ts";
 import { getViewAvailability, viewSummary } from "../app/lib/view-rules.ts";
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
@@ -61,7 +61,7 @@ test("creatures are separated from traces", () => {
 
 test("presets: unique IDs, valid groups, and expected counts", () => {
   assert.equal(new Set(presets.map((preset) => preset.id)).size, presets.length);
-  assert.equal(presets.filter((preset) => preset.mode === "scene").length, 48);
+  assert.equal(presets.filter((preset) => preset.mode === "scene").length, 53);
   assert.equal(presets.filter((preset) => preset.mode === "simple").length, 15);
   for (const preset of presets) assert.ok(presetGroups[preset.mode].some((group) => group.id === preset.group), `${preset.id}: ${preset.group}`);
   for (const mode of ["scene", "simple"] as const) for (const group of presetGroups[mode]) assert.ok(presets.some((preset) => preset.mode === mode && preset.group === group.id), `empty preset group ${mode}/${group.id}`);
@@ -174,20 +174,23 @@ test("3. the whole castle seen from high in the sky", () => {
   assert.match(pixaiTag(state), /no humans, scenery, castle standing on a hill, high altitude, aerial view, from above, looking down/);
 });
 
-test("4. flying over a harbor town and the sea", () => {
+test("4. flying over a harbor town and the sea — movement is stated before the target", () => {
   const text = tsubaki(applyPreset("harbor_flight"));
-  assert.match(text, /looking down at a bustling harbor town and the open sea below, as the viewpoint flies through the air/);
-  before(text, /from midair/, /harbor town/);
+  assert.match(text, /^A view from midair at a moderate altitude, as the viewpoint flies forward through the open air, looking down at a bustling harbor town and the open sea below, seen from far away, with the scenery below sliding past/);
+  before(text, /flies forward/, /harbor town/);
 });
 
-test("5. falling from the sky toward a city — the viewpoint falls, no falling person", () => {
+test("5. falling toward a city — the viewpoint plunges, the ground rushes up, no falling person", () => {
   const state = applyPreset("sky_fall_city");
   const text = tsubaki(state);
-  assert.match(text, /from within a vast open sky at high altitude, looking straight down at a sprawling city directly below/);
-  assert.match(text, /plunging viewpoint/);
-  assert.match(text, /streaks of rushing wind, clouds rushing past and dramatic plunging perspective/);
-  for (const tags of [pixaiTag(state), novelai(state), pixaiTag(state, "detailed")]) {
-    assert.doesNotMatch(tags.replace(/as if falling from the sky/, ""), /\bfalling\b|\bflying\b|1girl|1boy/);
+  assert.match(text, /^A view from midair at a moderate altitude, as the viewpoint plunges straight down, looking straight down at a downtown district of glass skyscrapers directly below, seen from a moderate distance, with the ground and everything on it rushing up toward the viewer in strong foreshortening/);
+  assert.match(text, /buildings converging toward a vanishing point/);
+  // 地図のような静かな俯瞰へ寄せる語を使わない
+  assert.doesNotMatch(text, /great distance|vast expanse|high altitude|as if falling/);
+  for (const tags of [pixaiTag(state), novelai(state), pixaiTag(state, "detailed"), novelai(state, "detailed")]) {
+    assert.match(tags, /from above, foreshortening, perspective/);
+    assert.match(tags, /vanishing point/);
+    assert.doesNotMatch(tags, /\bfalling\b|\bflying\b|1girl|1boy|top-down view|distant view|plunging view/);
   }
 });
 
@@ -556,4 +559,195 @@ test("advisor shows warnings and suggestions for representative rules", () => {
   assert.ok(getAdvice(shrine).some((item) => item.id === "shrine-torii"));
   const reef = applyPreset("coral_reef_day"); reef.scene.lighting.primarySource = "natural"; reef.scene.lighting.secondarySource = "none";
   assert.ok(getAdvice(reef).some((item) => item.id === "underwater-light"));
+});
+
+/* ------------------------------------------------------------------ */
+/* v2.1：選択をクリア／初期設定に戻す                                     */
+/* ------------------------------------------------------------------ */
+
+/** 画面の操作と同じ順で、STEP3の多くの項目と、条件で隠れる見え方の値を選んだ状態を作る */
+function busySceneState(): BackgroundState {
+  const state = withTarget(applyPreset("sky_fall_city"), "novelai", "tsubaki", { novelaiEmphasis: true });
+  state.outputStyle = "detailed";
+  Object.assign(state.scene.world, { worldType: "fantasy", era: "medieval", architectureStyle: ["gothic", "japanese"] });
+  Object.assign(state.scene.structures, { landmark: "clock_tower", secondary: ["street_lamps", "torii", "signs"], accents: ["mist", "petals", "cobwebs"], creatures: ["birds", "ghostly_figure"] });
+  Object.assign(state.scene.environment, { timeOfDay: "night", season: "autumn", weather: "rain", phenomena: ["fog", "aurora"] });
+  Object.assign(state.scene.lighting, { primarySource: "neon", secondarySource: "embers", direction: "back", quality: "dramatic" });
+  Object.assign(state.scene.atmosphere, { colorTone: "blue_purple", contrast: "high", mood: ["eerie", "majestic", "tense"] });
+  Object.assign(state.scene.composition, { perspective: "low_angle", depthLayers: "layered", density: "intricate", fantasyEffects: ["floating_lights", "divine_halo"], blend: "soft_blur" });
+  // 条件で非表示になる値（地上では使えない高度、窓以外の枠の窓の種類）も入れておく
+  Object.assign(state.scene.view, { vantage: "ground", altitude: "high", frame: "railing", frameDetail: "stained", lens: "fisheye" });
+  state.scene.place.stageState = ["rainy", "abandoned"];
+  return state;
+}
+
+test("clear: removes every optional scene selection, including collapsed and hidden values", () => {
+  const before = busySceneState();
+  const cleared = clearActiveMode(before);
+  const s = cleared.scene;
+  assert.deepEqual(s.world, { worldType: "", era: "", architectureStyle: [] });
+  assert.deepEqual(s.structures, { landmark: "none", secondary: [], accents: [], creatures: [] });
+  assert.deepEqual(s.environment, { timeOfDay: "", season: "", weather: "", phenomena: [] });
+  assert.deepEqual(s.lighting, { primarySource: "", secondarySource: "none", direction: "", quality: "" });
+  assert.deepEqual(s.atmosphere, { colorTone: "", contrast: "", mood: [] });
+  assert.deepEqual(s.composition, { perspective: "", depthLayers: "", density: "", fantasyEffects: [], blend: "" });
+  assert.deepEqual(s.view, createDefaultView());
+  assert.deepEqual(s.place.stageState, []);
+  // 残すもの：場所・比重・生成先・出力形式・もう一方のモード
+  assert.equal(s.place.mainStage, "skyscraper_district");
+  assert.equal(s.place.category, "urban_street");
+  assert.equal(s.subjectRelation, before.scene.subjectRelation);
+  assert.deepEqual(cleared.target, before.target);
+  assert.equal(cleared.outputStyle, "detailed");
+  assert.deepEqual(cleared.simple, before.simple);
+  // 保存データとして正しい形のまま（移行しても変わらない）
+  assert.deepEqual(migrateState(JSON.parse(JSON.stringify(cleared))), cleared);
+});
+
+test("clear: the prompt keeps only the place for every target and style", () => {
+  const cleared = clearActiveMode(busySceneState());
+  for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
+    const out = generateOutput(withTarget(cleared, platform, model), style);
+    assert.match(out.positive, /downtown district of glass skyscrapers/, `${platform}/${model}/${style}`);
+    assert.doesNotMatch(out.positive, /fantasy|medieval|Gothic|clock tower|street lamps|torii|mist|petals|cobwebs|birds|ghost|\bnight\b|autumn|\brain\b|\bfog\b|aurora|neon|ember|backlit|dramatic|violet|high contrast|eerie|majestic|tense|low-angle|from below|layered|intricate|floating lights|halo|softened|depth of field|plung|foreshortening|fisheye|railing|stained|\bwind\b|cloud|altitude|aerial/i, `${platform}/${model}/${style}: ${out.positive}`);
+    assert.doesNotMatch(out.positive, /,\s*,|\s{2,}|undefined/);
+  }
+  assert.deepEqual(getAdvice(cleared).filter((item) => item.kind === "warning"), []);
+});
+
+test("clear: simple mode removes texture, pattern, blur and decoration but keeps style and main color", () => {
+  const state = applyPreset("lace_ribbon_pink");
+  state.simple.rendering = ["gentle_blur", "soft_glow", "vignette"];
+  state.simple.colors.intensity = "deep";
+  const cleared = clearActiveMode(state);
+  assert.deepEqual(cleared.simple, { subjectRelation: "character_focus", style: "purikura", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "", intensity: "medium" }, rendering: [], pattern: "", texture: "", decoration: { enabled: false, motifs: [], placement: "", density: "" } });
+  assert.deepEqual(cleared.scene, state.scene);
+  const pattern = clearActiveMode(applyPreset("seigaiha_navy"));
+  assert.equal(pattern.simple.backgroundType, "solid");
+  assert.equal(pattern.simple.pattern, "");
+  for (const [platform, model] of ALL_TARGETS) {
+    const out = generateOutput(withTarget(pattern, platform, model)).positive;
+    assert.doesNotMatch(out, /seigaiha|gold|pattern|blur|glow|vignette|lace|ribbon/i, `${platform}: ${out}`);
+    assert.match(out, /navy/);
+  }
+});
+
+test("clear and defaults: cancel changes nothing; confirmations explain the difference", () => {
+  const state = busySceneState();
+  assert.equal(clearActiveMode(state, false), state);
+  assert.equal(resetActiveMode(state, false), state);
+  assert.match(clearConfirmationMessage("scene"), /任意の選択.*外します/s);
+  assert.match(clearConfirmationMessage("scene"), /保存一覧は消えません/);
+  assert.match(defaultsConfirmationMessage("scene"), /初期設定には.*選択が含まれます/s);
+  assert.match(defaultsConfirmationMessage("simple"), /初期設定には.*選択が含まれます/s);
+  // 初期設定に戻すは、従来どおり作例の状態（選択あり）に戻る
+  const defaults = resetActiveMode(state);
+  assert.deepEqual(defaults.scene, createDefaultState().scene);
+  assert.deepEqual(defaults.target, state.target);
+});
+
+/* ------------------------------------------------------------------ */
+/* v2.1：動きのある見え方                                               */
+/* ------------------------------------------------------------------ */
+
+const DYNAMIC = ["sky_fall_city", "city_dive", "sea_glide", "castle_tower_flyby", "cloud_break_harbor", "town_rapid_ascent", "harbor_flight"];
+const STATIC_VIEWS = ["castle_from_town", "castle_balcony_view", "castle_aerial", "window_sky_hall", "mountain_dawn", "canyon_overlook", "multilevel_overlook"];
+
+test("dynamic presets: vantage, gaze and motion are consistent and nothing is ignored", () => {
+  for (const id of DYNAMIC) {
+    const state = applyPreset(id);
+    const availability = getViewAvailability(state);
+    assert.ok(state.scene.view.motion in motionProfiles, id);
+    assert.deepEqual(availability.notices.filter((item) => item.kind === "ignored"), [], id);
+    assert.deepEqual(availability.notices.filter((item) => ["motion-gaze", "cloud-gaze", "motion-distance"].includes(item.id)), [], id);
+    assert.ok(state.scene.view.motionEffects.length <= 3, id);
+    for (const effect of state.scene.view.motionEffects) assert.ok(motionProfiles[state.scene.view.motion].recommended.includes(effect) || effect === "wind_streaks", `${id}: ${effect}`);
+  }
+});
+
+test("dynamic presets: the ground scenery and direction of movement reach every target", () => {
+  const cases: Record<string, { natural: RegExp[]; tags: RegExp }> = {
+    sky_fall_city: { natural: [/plunges straight down/, /rushing up toward the viewer/], tags: /foreshortening/ },
+    city_dive: { natural: [/dives steeply toward a downtown district of glass skyscrapers, looking down/, /growing larger as it rushes closer/], tags: /foreshortening, perspective/ },
+    sea_glide: { natural: [/glides smoothly on the wind/, /the open sea and the distant horizon/, /skimming just above the surface toward the horizon/], tags: /horizon, very wide shot/ },
+    castle_tower_flyby: { natural: [/races past close beside a castle standing on a hill at high speed/, /looming large in the near foreground/], tags: /foreshortening, perspective/ },
+    cloud_break_harbor: { natural: [/descends out of a layer of clouds/, /clouds part to reveal the view far below/, /harbor town and the open sea below/], tags: /cloud, perspective/ },
+    town_rapid_ascent: { natural: [/shoots rapidly upward/, /ground dropping away and shrinking below/, /residential street directly below/], tags: /from above, perspective/ },
+  };
+  for (const [id, expected] of Object.entries(cases)) {
+    const state = applyPreset(id);
+    const text = tsubaki(state);
+    for (const pattern of expected.natural) assert.match(text, pattern, `${id}: ${text}`);
+    // 移動の向きは、見える対象より前に書く
+    before(text, /as the viewpoint/, /looking|gazing/);
+    for (const tags of [pixaiTag(state), novelai(state)]) assert.match(tags, expected.tags, `${id}: ${tags}`);
+  }
+});
+
+test("dynamic presets never add a person or a pose", () => {
+  for (const id of DYNAMIC) for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
+    const out = generateOutput(withTarget(applyPreset(id), platform, model), style).positive;
+    assert.doesNotMatch(out, /\b(falling|flying|jumping|skydiv\w*|1girl|1boy|person|people|man|woman|character|pose|arms?|legs?|hands?|pov)\b/i, `${id} ${platform}/${model}/${style}: ${out}`);
+  }
+});
+
+test("NovelAI and tag targets use short learned-style phrases for motion, not long sentences", () => {
+  for (const id of DYNAMIC) {
+    for (const out of [novelai(applyPreset(id), "detailed"), pixaiTag(applyPreset(id), "detailed")]) {
+      assert.doesNotMatch(out, /as the viewpoint|view from/, `${id}: ${out}`);
+      assert.ok(out.split(", ").every((tag) => tag.split(" ").length <= 9), `${id}: ${out}`);
+    }
+    const emphasized = generateOutput(withTarget(applyPreset(id), "novelai", "tsubaki", { novelaiEmphasis: true })).positive;
+    assert.equal((emphasized.match(/::/g) || []).length, 2, `${id}: emphasis only once`);
+    assert.doesNotMatch(emphasized, /[2-9]\.\d::|1\.[3-9]::/);
+  }
+});
+
+test("static views keep exactly their v2.0 wording and get no motion cues", () => {
+  for (const id of STATIC_VIEWS) {
+    const state = applyPreset(id);
+    assert.equal(state.scene.view.motion, "still", id);
+    for (const [platform, model] of ALL_TARGETS) {
+      const out = generateOutput(withTarget(state, platform, model), "detailed").positive;
+      assert.doesNotMatch(out, /as the viewpoint|rushing|foreshortening|vanishing point|dutch angle|motion blur|speed lines/, `${id} ${platform}: ${out}`);
+    }
+  }
+});
+
+test("loading a preset or recipe never carries over motion, effects, frame or lens", () => {
+  const dynamic = withTarget(applyPreset("city_dive"), "novelai");
+  for (const id of STATIC_VIEWS.concat(["rainy_alley", "shrine_dusk"])) {
+    const preset = presets.find((item) => item.id === id)!;
+    // 画面の applyPreset と同じ合成
+    const loaded = migrateState({ ...dynamic, ...structuredClone(preset.patch), backgroundMode: preset.mode, target: dynamic.target });
+    assert.deepEqual(loaded.scene.view, applyPreset(id).scene.view, id);
+    assert.equal(loaded.target.platform, "novelai");
+  }
+  for (const recipe of viewRecipes) {
+    const view = viewFromRecipe(recipe.id)!;
+    const reference = { ...createDefaultView(), ...recipe.view, mode: "custom" };
+    assert.deepEqual(view, reference, recipe.id);
+    if (!["flying", "falling", "dive", "rapid_ascent", "cloud_break", "fly_by", "underwater_up"].includes(recipe.id)) {
+      assert.equal(view.motion, "still", recipe.id);
+      assert.deepEqual(view.motionEffects, [], recipe.id);
+      assert.equal(view.lens, "", recipe.id);
+    }
+  }
+});
+
+test("dynamic motions are disabled or warned where they cannot read well", () => {
+  const ground = applyPreset("residential_dusk"); ground.scene.view = { ...ground.scene.view, mode: "custom", vantage: "street" };
+  const g = getViewAvailability(ground);
+  for (const id of ["falling", "dive", "cloud_break"]) assert.ok(g.disabled.motion[id], id);
+  assert.equal(g.disabled.motion.rapid_ascent, undefined);
+  const tower = applyPreset("castle_aerial"); tower.scene.view = { ...tower.scene.view, vantage: "tower_top", altitude: "" };
+  assert.ok(getViewAvailability(tower).disabled.motion.cloud_break);
+  assert.equal(getViewAvailability(tower).disabled.motion.dive, undefined);
+  const fall = applyPreset("sky_fall_city");
+  fall.scene.view = { ...fall.scene.view, gaze: "up_diagonal", distance: "very_far", motionEffects: ["speed_lines"], lens: "fisheye" };
+  const ids = getViewAvailability(fall).notices.map((item) => item.id);
+  for (const id of ["motion-gaze", "motion-distance", "effects-style", "fisheye-style"]) assert.ok(ids.includes(id), id);
+  // 静止に戻すと、演出は出力されない
+  const still = applyPreset("sky_fall_city"); still.scene.view.motion = "still";
+  assert.doesNotMatch(tsubaki(still), /converging|strong wind|rushing/);
 });

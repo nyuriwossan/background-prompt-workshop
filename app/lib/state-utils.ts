@@ -9,6 +9,13 @@ export function resetConfirmationMessage(mode: BackgroundMode) {
   return `${mode === "scene" ? "空間背景" : "シンプル背景"}の設定を初期状態に戻しますか？`;
 }
 
+/** 「初期設定に戻す」の確認文。初期設定にも選択済みの項目があることを明示する */
+export function defaultsConfirmationMessage(mode: BackgroundMode) {
+  return mode === "scene"
+    ? "空間背景を初期設定（雨の夜の路地裏の例）に戻します。\n初期設定には、夜・雨・街灯・ネオンなどの選択が含まれます。生成先と保存一覧はそのままです。"
+    : "シンプル背景を初期設定（ピンクとラベンダーのグラデーションの例）に戻します。\n初期設定には、ぼかし・きらきら装飾などの選択が含まれます。生成先と保存一覧はそのままです。";
+}
+
 /** 表示中のモードだけを初期化する。生成先の設定ともう一方のモードは保つ */
 export function resetActiveMode(state: BackgroundState, confirmed = true): BackgroundState {
   if (!confirmed) return state;
@@ -19,6 +26,55 @@ export function resetActiveMode(state: BackgroundState, confirmed = true): Backg
   }
 
   return { ...state, simple: defaults.simple };
+}
+
+/**
+ * 表示中のモードの「任意の選択」をすべて外す（新規作成）。
+ * - 空間背景：場所（空間タイプ・カテゴリ・舞台）と人物との比重は残し、それ以外の任意項目を未指定にする。
+ *   折りたたまれた項目や、条件で非表示の項目（高度・動き・窓の種類など）も対象。見え方は標準に戻す。
+ * - シンプル背景：スタイル・メインカラー・人物との関係は残し、副色・質感・柄・装飾を外す。
+ *   柄背景／質感背景は、柄・素材を外すと意味を失うため単色に戻す。濃さは「標準」にする。
+ * - 生成先・出力形式・もう一方のモードはそのまま。
+ */
+export function clearActiveMode(state: BackgroundState, confirmed = true): BackgroundState {
+  if (!confirmed) return state;
+  if (state.backgroundMode === "scene") {
+    const s = state.scene;
+    return {
+      ...state,
+      scene: {
+        subjectRelation: s.subjectRelation,
+        place: { ...s.place, stageState: [] },
+        world: { worldType: "", era: "", architectureStyle: [] },
+        structures: { landmark: "none", secondary: [], accents: [], creatures: [] },
+        environment: { timeOfDay: "", season: "", weather: "", phenomena: [] },
+        lighting: { primarySource: "", secondarySource: "none", direction: "", quality: "" },
+        atmosphere: { colorTone: "", contrast: "", mood: [] },
+        composition: { perspective: "", depthLayers: "", density: "", fantasyEffects: [], blend: "" },
+        view: createDefaultView(),
+      },
+    };
+  }
+  const s = state.simple;
+  return {
+    ...state,
+    simple: {
+      subjectRelation: s.subjectRelation,
+      style: s.style,
+      backgroundType: s.backgroundType === "pattern" || s.backgroundType === "texture" ? "solid" : s.backgroundType,
+      colors: { primary: s.colors.primary, secondary: "", intensity: "medium" },
+      rendering: [],
+      pattern: "",
+      texture: "",
+      decoration: { enabled: false, motifs: [], placement: "", density: "" },
+    },
+  };
+}
+
+export function clearConfirmationMessage(mode: BackgroundMode) {
+  return mode === "scene"
+    ? "空間背景の任意の選択（世界観・構成物・天気・光・雰囲気・奥行き・見え方など）をすべて外します。\n場所・人物と背景の比重・生成先・出力形式はそのままです。保存一覧は消えません。"
+    : "シンプル背景の任意の選択（サブカラー・質感・柄・装飾など）をすべて外します。\nスタイル・メインカラー・人物との関係・生成先はそのままです。保存一覧は消えません。";
 }
 
 /* ------------------------------------------------------------------ */
