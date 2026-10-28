@@ -1,0 +1,480 @@
+{
+ "design": {
+  "version": 1,
+  "type": "background-workshop-design",
+  "state": {
+   "version": 1,
+   "backgroundMode": "scene",
+   "outputStyle": "short",
+   "scene": {
+    "subjectRelation": "balanced",
+    "place": {
+     "environmentType": "outdoor",
+     "category": "sacred",
+     "mainStage": "temple",
+     "stageState": [
+      "ceremonial"
+     ]
+    },
+    "world": {
+     "worldType": "fantasy",
+     "era": "ancient",
+     "architectureStyle": [
+      "classical"
+     ]
+    },
+    "structures": {
+     "landmark": "altar",
+     "secondary": [
+      "columns",
+      "statues"
+     ],
+     "accents": [
+      "candles",
+      "mist"
+     ]
+    },
+    "environment": {
+     "timeOfDay": "night",
+     "season": "winter",
+     "weather": "clear",
+     "phenomena": [
+      "fog"
+     ]
+    },
+    "lighting": {
+     "primarySource": "moonlight",
+     "secondarySource": "rim_light",
+     "direction": "top",
+     "quality": "soft"
+    },
+    "atmosphere": {
+     "colorTone": "cool",
+     "contrast": "medium",
+     "mood": [
+      "solemn",
+      "mysterious"
+     ]
+    },
+    "composition": {
+     "perspective": "low_angle",
+     "depthLayers": "deep",
+     "density": "rich",
+     "fantasyEffects": [
+      "floating_lights"
+     ],
+     "blend": "atmospheric"
+    }
+   },
+   "simple": {
+    "subjectRelation": "character_focus",
+    "style": "soft",
+    "backgroundType": "gradient",
+    "colors": {
+     "primary": "pastel_pink",
+     "secondary": "lavender",
+     "intensity": "soft"
+    },
+    "rendering": [
+     "diagonal_gradient",
+     "center_glow",
+     "gentle_blur"
+    ],
+    "decoration": {
+     "enabled": true,
+     "motifs": [
+      "subtle_sparkles"
+     ]
+    }
+   },
+   "ui": {
+    "warningsDismissed": [],
+    "expandedSections": [
+     "purpose",
+     "stage"
+    ]
+   }
+  }
+ },
+ "library": {
+  "version": 1,
+  "type": "background-workshop-library",
+  "saved": [
+   {
+    "id": "saved-0",
+    "name": "雨の夜の街",
+    "savedAt": "2026-10-01T00:00:00.000Z",
+    "state": {
+     "version": 1,
+     "backgroundMode": "scene",
+     "outputStyle": "short",
+     "scene": {
+      "subjectRelation": "character_focus",
+      "place": {
+       "environmentType": "outdoor",
+       "category": "urban_street",
+       "mainStage": "back_alley",
+       "stageState": [
+        "rainy"
+       ]
+      },
+      "world": {
+       "worldType": "modern",
+       "era": "contemporary",
+       "architectureStyle": []
+      },
+      "structures": {
+       "landmark": "none",
+       "secondary": [
+        "street_lamps",
+        "wall_pipes"
+       ],
+       "accents": [
+        "wet_ground",
+        "neon_reflections"
+       ]
+      },
+      "environment": {
+       "timeOfDay": "night",
+       "season": "autumn",
+       "weather": "rain",
+       "phenomena": [
+        "rain_haze"
+       ]
+      },
+      "lighting": {
+       "primarySource": "neon",
+       "secondarySource": "streetlight",
+       "direction": "side",
+       "quality": "diffused"
+      },
+      "atmosphere": {
+       "colorTone": "blue_purple",
+       "contrast": "medium",
+       "mood": [
+        "melancholic",
+        "cinematic"
+       ]
+      },
+      "composition": {
+       "perspective": "eye_level",
+       "depthLayers": "layered",
+       "density": "rich",
+       "fantasyEffects": [],
+       "blend": "atmospheric"
+      }
+     },
+     "simple": {
+      "subjectRelation": "character_focus",
+      "style": "soft",
+      "backgroundType": "gradient",
+      "colors": {
+       "primary": "pastel_pink",
+       "secondary": "lavender",
+       "intensity": "soft"
+      },
+      "rendering": [
+       "diagonal_gradient",
+       "center_glow",
+       "gentle_blur"
+      ],
+      "decoration": {
+       "enabled": true,
+       "motifs": [
+        "subtle_sparkles"
+       ]
+      }
+     },
+     "ui": {
+      "warningsDismissed": [],
+      "expandedSections": [
+       "purpose",
+       "stage"
+      ]
+     }
+    }
+   },
+   {
+    "id": "saved-1",
+    "name": "幻想的な森",
+    "savedAt": "2026-10-01T00:00:00.000Z",
+    "state": {
+     "version": 1,
+     "backgroundMode": "scene",
+     "outputStyle": "short",
+     "scene": {
+      "subjectRelation": "balanced",
+      "place": {
+       "environmentType": "outdoor",
+       "category": "forest",
+       "mainStage": "deep_forest",
+       "stageState": [
+        "overgrown"
+       ]
+      },
+      "world": {
+       "worldType": "fantasy",
+       "era": "medieval",
+       "architectureStyle": []
+      },
+      "structures": {
+       "landmark": "giant_tree",
+       "secondary": [
+        "rocks"
+       ],
+       "accents": [
+        "moss",
+        "light_particles",
+        "mist"
+       ]
+      },
+      "environment": {
+       "timeOfDay": "dawn",
+       "season": "spring",
+       "weather": "clear",
+       "phenomena": [
+        "fog"
+       ]
+      },
+      "lighting": {
+       "primarySource": "magic",
+       "secondarySource": "rim_light",
+       "direction": "scattered",
+       "quality": "hazy"
+      },
+      "atmosphere": {
+       "colorTone": "cool",
+       "contrast": "low",
+       "mood": [
+        "dreamlike",
+        "mysterious"
+       ]
+      },
+      "composition": {
+       "perspective": "wide",
+       "depthLayers": "deep",
+       "density": "rich",
+       "fantasyEffects": [
+        "floating_lights"
+       ],
+       "blend": "atmospheric"
+      }
+     },
+     "simple": {
+      "subjectRelation": "character_focus",
+      "style": "soft",
+      "backgroundType": "gradient",
+      "colors": {
+       "primary": "pastel_pink",
+       "secondary": "lavender",
+       "intensity": "soft"
+      },
+      "rendering": [
+       "diagonal_gradient",
+       "center_glow",
+       "gentle_blur"
+      ],
+      "decoration": {
+       "enabled": true,
+       "motifs": [
+        "subtle_sparkles"
+       ]
+      }
+     },
+     "ui": {
+      "warningsDismissed": [],
+      "expandedSections": [
+       "purpose",
+       "stage"
+      ]
+     }
+    }
+   },
+   {
+    "id": "saved-2",
+    "name": "静かな図書館",
+    "savedAt": "2026-10-01T00:00:00.000Z",
+    "state": {
+     "version": 1,
+     "backgroundMode": "scene",
+     "outputStyle": "short",
+     "scene": {
+      "subjectRelation": "character_focus",
+      "place": {
+       "environmentType": "indoor",
+       "category": "study",
+       "mainStage": "library",
+       "stageState": [
+        "lived_in"
+       ]
+      },
+      "world": {
+       "worldType": "historical",
+       "era": "victorian",
+       "architectureStyle": [
+        "gothic"
+       ]
+      },
+      "structures": {
+       "landmark": "giant_window",
+       "secondary": [
+        "bookshelves",
+        "tables"
+       ],
+       "accents": [
+        "scattered_books"
+       ]
+      },
+      "environment": {
+       "timeOfDay": "dusk",
+       "season": "autumn",
+       "weather": "cloudy",
+       "phenomena": [
+        "dust"
+       ]
+      },
+      "lighting": {
+       "primarySource": "natural",
+       "secondarySource": "window_light",
+       "direction": "side",
+       "quality": "soft"
+      },
+      "atmosphere": {
+       "colorTone": "warm",
+       "contrast": "low",
+       "mood": [
+        "quiet",
+        "solemn"
+       ]
+      },
+      "composition": {
+       "perspective": "eye_level",
+       "depthLayers": "layered",
+       "density": "standard",
+       "fantasyEffects": [],
+       "blend": "soft_blur"
+      }
+     },
+     "simple": {
+      "subjectRelation": "character_focus",
+      "style": "soft",
+      "backgroundType": "gradient",
+      "colors": {
+       "primary": "pastel_pink",
+       "secondary": "lavender",
+       "intensity": "soft"
+      },
+      "rendering": [
+       "diagonal_gradient",
+       "center_glow",
+       "gentle_blur"
+      ],
+      "decoration": {
+       "enabled": true,
+       "motifs": [
+        "subtle_sparkles"
+       ]
+      }
+     },
+     "ui": {
+      "warningsDismissed": [],
+      "expandedSections": [
+       "purpose",
+       "stage"
+      ]
+     }
+    }
+   },
+   {
+    "id": "saved-simple",
+    "name": "白背景",
+    "savedAt": "2026-10-02T00:00:00.000Z",
+    "state": {
+     "version": 1,
+     "backgroundMode": "simple",
+     "outputStyle": "short",
+     "scene": {
+      "subjectRelation": "character_focus",
+      "place": {
+       "environmentType": "outdoor",
+       "category": "urban_street",
+       "mainStage": "back_alley",
+       "stageState": [
+        "rainy"
+       ]
+      },
+      "world": {
+       "worldType": "modern",
+       "era": "contemporary",
+       "architectureStyle": []
+      },
+      "structures": {
+       "landmark": "none",
+       "secondary": [
+        "street_lamps",
+        "wall_pipes"
+       ],
+       "accents": [
+        "wet_ground",
+        "neon_reflections"
+       ]
+      },
+      "environment": {
+       "timeOfDay": "night",
+       "season": "autumn",
+       "weather": "rain",
+       "phenomena": [
+        "rain_haze"
+       ]
+      },
+      "lighting": {
+       "primarySource": "neon",
+       "secondarySource": "streetlight",
+       "direction": "side",
+       "quality": "diffused"
+      },
+      "atmosphere": {
+       "colorTone": "blue_purple",
+       "contrast": "medium",
+       "mood": [
+        "melancholic",
+        "cinematic"
+       ]
+      },
+      "composition": {
+       "perspective": "eye_level",
+       "depthLayers": "layered",
+       "density": "rich",
+       "fantasyEffects": [],
+       "blend": "atmospheric"
+      }
+     },
+     "simple": {
+      "subjectRelation": "character_focus",
+      "style": "plain",
+      "backgroundType": "solid",
+      "colors": {
+       "primary": "white",
+       "secondary": "",
+       "intensity": "very_light"
+      },
+      "rendering": [
+       "flat"
+      ],
+      "decoration": {
+       "enabled": false,
+       "motifs": []
+      }
+     },
+     "ui": {
+      "warningsDismissed": [],
+      "expandedSections": [
+       "purpose",
+       "stage"
+      ]
+     }
+    }
+   }
+  ]
+ }
+}
