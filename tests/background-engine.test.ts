@@ -411,7 +411,7 @@ test("8. new daily, Japanese, SF and horror backgrounds generate identifiable pr
 });
 
 test("9. simple backgrounds: patterns, textures and decoration placement", () => {
-  assert.match(generatePrompt(applyPreset("mint_grid"), "short"), /soft mint and white patterned backdrop, a fine geometric grid pattern/);
+  assert.match(generatePrompt(applyPreset("mint_grid"), "short"), /very pale soft mint and white patterned backdrop, a fine geometric grid pattern/);
   assert.match(generatePrompt(applyPreset("cream_paper"), "detailed"), /textured backdrop with fine paper texture/);
   assert.match(generatePrompt(applyPreset("lace_ribbon_pink"), "detailed"), /moderate lace trim details and delicate ribbon motifs arranged along the edges/);
   assert.match(pixaiTag(applyPreset("seigaiha_navy")), /simple background, deep navy background, soft gold background, seigaiha, japanese pattern/);

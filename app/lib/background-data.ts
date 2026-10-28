@@ -1189,7 +1189,7 @@ export const presets: BackgroundPreset[] = [
   },
   {
     id: "mint_grid", mode: "simple", group: "pattern", label: "ミントの格子柄", description: "細い格子で軽やかに",
-    patch: simplePatch({ style: "plain", backgroundType: "pattern", pattern: "geometric_grid", colors: { primary: "mint", secondary: "white", intensity: "soft" }, rendering: ["flat"], decoration: { enabled: false, motifs: [], placement: "", density: "" } }),
+    patch: simplePatch({ style: "plain", backgroundType: "pattern", pattern: "geometric_grid", colors: { primary: "mint", secondary: "white", intensity: "very_light" }, rendering: ["flat"], decoration: { enabled: false, motifs: [], placement: "", density: "" } }),
   },
   {
     id: "seigaiha_navy", mode: "simple", group: "pattern", label: "青海波の和柄", description: "紺地に伝統文様",

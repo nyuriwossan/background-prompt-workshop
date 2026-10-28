@@ -1,3 +1,4 @@
+import { sceneData } from "./background-data.ts";
 import type { BackgroundState } from "./background-data.ts";
 import { stageProfile } from "./view-rules.ts";
 
@@ -25,6 +26,14 @@ export function getAdvice(state: BackgroundState): Advice[] {
     if (profile.underwater && !["underwater_sunlight", "bioluminescence"].includes(s.lighting.primarySource) && s.lighting.secondarySource !== "caustics" && s.lighting.secondarySource !== "god_rays") result.push({ id: "underwater-light", kind: "suggestion", title: "水中らしい光を", body: "水面から差す光にすると、水上の海辺と区別しやすくなります。", actionLabel: "水面から差す光", patch: { path: "scene.lighting.primarySource", value: "underwater_sunlight" } });
     if (profile.underwater && ["rain", "snow", "storm"].includes(s.environment.weather)) result.push({ id: "underwater-weather", kind: "warning", title: "水中で天候が強く出るかも", body: "雨・雪・嵐は水中では描きにくい要素です。「指定しない」がおすすめです。", actionLabel: "天候を指定しない", patch: { path: "scene.environment.weather", value: "" } });
     if (s.environment.timeOfDay === "night" && s.lighting.primarySource === "underwater_sunlight") result.push({ id: "night-underwater-sun", kind: "warning", title: "夜に日光が差しています", body: "夜の水中なら「生物発光」や「月明かり」が自然です。", actionLabel: "生物発光に変更", patch: { path: "scene.lighting.primarySource", value: "bioluminescence" } });
+    // 場所を変えたあとに、前の場所の構成物が残っていないか
+    const stageGenres = profile.stage?.genres || profile.category?.genres || [];
+    if (stageGenres.length) {
+      const pools = [sceneData.landmarks, sceneData.secondary, sceneData.accents];
+      const chosen = [s.structures.landmark, ...s.structures.secondary, ...s.structures.accents].filter((id) => id && id !== "none");
+      const leftovers = chosen.map((id) => pools.flatMap((list) => list).find((item) => item.id === id)).filter((item) => item && item.genres?.length && !item.genres.some((genre) => stageGenres.includes(genre)));
+      if (leftovers.length >= 2) result.push({ id: "structure-leftovers", kind: "suggestion", title: "前の場所の構成物が残っているかも", body: `「${leftovers.map((item) => item!.label).join("・")}」は、今の場所とは別の分類です。意図していなければ「建物や周囲のもの」で外してください。` });
+    }
     if (s.structures.creatures.length && s.subjectRelation === "background_only") result.push({ id: "creatures-drawn", kind: "suggestion", title: "生き物は描かれます", body: "「背景のみ」でも、選んだ生き物・怪異は画面に入ります。痕跡だけにしたい場合は外してください。" });
     if (has(s.structures.creatures, "ghostly_figure") && s.subjectRelation !== "background_only") result.push({ id: "ghost-character", kind: "suggestion", title: "幽霊が人物と混ざるかも", body: "人物と一緒に使うと、幽霊がもう一人の人物として描かれることがあります。怖さだけなら「怪異の爪痕」などの痕跡がおすすめです。", actionLabel: "爪痕を追加", patch: { path: "scene.structures.accents", value: "scratch_marks", multi: true } });
     if (s.environment.timeOfDay === "night" && profile.indoor && s.lighting.primarySource === "natural") result.push({ id: "night-natural-indoor", kind: "warning", title: "夜の室内に自然光", body: "夜なら室内灯・ろうそくなど、光の理由がある光源が自然です。", actionLabel: "暖かな室内灯", patch: { path: "scene.lighting.primarySource", value: "warm_indoor" } });
