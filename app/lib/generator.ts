@@ -3,6 +3,7 @@ import type { BackgroundState, Option, OutputStyle } from "./background-data.ts"
 import { migrateState } from "./state-utils.ts";
 import { getViewAvailability } from "./view-rules.ts";
 import { motionProfiles, viewData } from "./view-data.ts";
+import { eventById, isSeasonalMotif, profileById } from "./seasonal-data.ts";
 import type { ViewOption, ViewState } from "./view-data.ts";
 
 type AnyOption = Option | ViewOption;
@@ -351,32 +352,46 @@ function simpleParts(state: BackgroundState) {
   const motifs = s.decoration.enabled ? words(simpleData.motifs, s.decoration.motifs) : [];
   const placement = s.decoration.enabled && motifs.length ? en(simpleData.placements, s.decoration.placement) : "";
   const density = s.decoration.enabled && motifs.length ? en(simpleData.decorationDensities, s.decoration.density) : "";
-  return { s, primary, secondary, color, type, pattern, texture, render, motifs, placement, density, character: en(simpleData.styles, s.style), relation: en(simpleData.relations, s.subjectRelation) };
+  // v2.2：テイストの一言（既存の項目で表せないものだけ）。テイスト未選択なら空で、従来の出力と同じになる
+  const profile = profileById(s.designProfile);
+  const profileUsable = Boolean(profile && (!profile.decorationOnly || motifs.length));
+  const profileHint = profileUsable ? profile!.en : "";
+  const profileTag = profileUsable ? profile!.tag : "";
+  // 季節のモチーフは人物に重なりやすいので、端・四隅・上側に置いたときは「中央を空ける」ことも明示する
+  // （イベントを選んでいる場合は、既存モチーフだけでも同じ扱い。イベントは v2.2 からなので、旧データの出力は変わらない）
+  const seasonal = motifs.length > 0 && (Boolean(eventById(s.eventTheme)) || s.decoration.motifs.some(isSeasonalMotif));
+  const keepCenter = seasonal && ["edges", "corners", "upper"].includes(s.decoration.placement) && ["character_focus", "soft_blend"].includes(s.subjectRelation);
+  return { s, primary, secondary, color, type, pattern, texture, render, motifs, placement, density, profileHint, profileTag, seasonal, keepCenter, character: en(simpleData.styles, s.style), relation: en(simpleData.relations, s.subjectRelation) };
 }
+
+const CENTER_NATURAL = "leaving the center open";
 
 function genericSimple(state: BackgroundState, style: OutputStyle) {
   const p = simpleParts(state);
   const decoration = p.motifs.length && (p.placement || p.density) ? [`${p.density ? `${p.density} ` : ""}${joinNatural(p.motifs)}${p.placement ? ` ${p.placement}` : ""}`] : p.motifs;
-  if (style === "short") return [`${p.color} ${p.type}`, p.pattern, p.texture, ...p.render, ...(p.placement || p.density ? decoration : p.motifs), `${p.character} finish`, p.relation].filter(Boolean).join(", ");
-  const detail = [p.pattern, p.texture, ...p.render, ...decoration].filter(Boolean);
-  return sentence(`A ${p.color} ${p.type}${detail.length ? ` with ${joinNatural(detail)}` : ""}, creating a ${p.character} finish while remaining ${p.relation}`);
+  if (style === "short") return [`${p.color} ${p.type}`, p.pattern, p.texture, ...p.render, p.profileHint, ...(p.placement || p.density ? decoration : p.motifs), p.keepCenter ? CENTER_NATURAL : "", `${p.character} finish`, p.relation].filter(Boolean).join(", ");
+  const detail = [p.pattern, p.texture, ...p.render, p.profileHint, ...decoration].filter(Boolean);
+  return sentence(`A ${p.color} ${p.type}${detail.length ? ` with ${joinNatural(detail)}` : ""}${p.keepCenter ? `, ${CENTER_NATURAL}` : ""}, creating a ${p.character} finish while remaining ${p.relation}`);
 }
 
 function tsubakiSimple(state: BackgroundState, style: OutputStyle, negativeHandlesPeople: boolean) {
   const p = simpleParts(state);
   const base = sentence(`A ${p.color} ${p.type.replace("backdrop", "background")}${p.pattern ? ` with ${p.pattern}` : ""}${p.texture ? ` with ${p.texture}` : ""}`);
-  const render = p.render.length ? sentence(`It has ${joinNatural(p.render)}`) : "";
-  const decoration = p.motifs.length ? sentence(`It is decorated with ${p.density ? `${p.density} ` : ""}${joinNatural(p.motifs)}${p.placement ? ` ${p.placement}` : ""}`) : "";
+  const renderItems = style === "short" ? [p.profileHint].filter(Boolean) : [...p.render, p.profileHint].filter(Boolean);
+  const render = renderItems.length ? sentence(`It has ${joinNatural(renderItems)}`) : "";
+  const decoration = p.motifs.length ? sentence(`It is decorated with ${p.density ? `${p.density} ` : ""}${joinNatural(p.motifs)}${p.placement ? ` ${p.placement}` : ""}${p.keepCenter ? `, ${CENTER_NATURAL}` : ""}`) : "";
   const relation = p.s.subjectRelation === "background_only" && !negativeHandlesPeople ? "an empty standalone background with no people" : p.relation;
   const finish = sentence(`The look is ${p.character}, ${relation}`);
-  return (style === "short" ? [base, decoration, finish] : [base, render, decoration, finish]).filter(Boolean).join(" ");
+  return [base, render, decoration, finish].filter(Boolean).join(" ");
 }
 
+/** タグ系：配置・量は詳細版だけ（従来どおり）。季節のモチーフを選んだときだけ、短縮版にも入れる（人物に重ならないように） */
 function tagSimple(state: BackgroundState, style: OutputStyle, novelai: boolean) {
   const p = simpleParts(state);
   const s = p.s;
   const typeTag: Record<string, string> = { solid: "", gradient: "gradient background", soft_abstract: "abstract background", studio: "studio background", pattern: "", texture: "" };
   const colorTags = [p.primary ? `${p.primary} background` : "", p.secondary ? `${p.secondary} background` : ""];
+  const withLayout = style === "detailed" || p.seasonal;
   const items = [
     s.subjectRelation === "background_only" ? "no humans" : "",
     "simple background",
@@ -385,9 +400,10 @@ function tagSimple(state: BackgroundState, style: OutputStyle, novelai: boolean)
     s.backgroundType === "pattern" ? tagOf(simpleData.patterns, s.pattern) : "",
     s.backgroundType === "texture" ? tagOf(simpleData.textures, s.texture) : "",
     ...(style === "detailed" || novelai ? tagsOf(simpleData.renderings, s.rendering) : tagsOf(simpleData.renderings, s.rendering).slice(0, 2)),
+    p.profileTag,
     ...tagsOf(simpleData.motifs, s.decoration.enabled ? s.decoration.motifs : []),
-    style === "detailed" ? p.placement : "",
-    style === "detailed" && p.density ? `${p.density} decorations` : "",
+    withLayout ? p.placement : "",
+    withLayout && p.density ? `${p.density} decorations` : "",
   ];
   return uniqueTags(items.filter(Boolean)).join(", ");
 }
@@ -448,6 +464,8 @@ export function generateOutput(input: BackgroundState, style: OutputStyle = inpu
       : platform === "pixai" ? tagSimple(state, style, false)
       : platform === "novelai" ? tagSimple(state, style, true)
       : genericSimple(state, style);
+    const p = simpleParts(state);
+    if (p.seasonal && style === "short" && (platform === "novelai" || (platform === "pixai" && pixaiModel === "tag")) && (p.placement || p.density)) notes.push("季節のモチーフは人物に重なりやすいため、短縮版にも置く場所と量を入れています。");
     return { positive, negative, notes };
   }
 
@@ -480,5 +498,7 @@ export function japaneseSummary(state: BackgroundState) {
     return [label(sceneData.stages, s.place.mainStage), label(sceneData.times, s.environment.timeOfDay), label(sceneData.weather, s.environment.weather), label(sceneData.tones, s.atmosphere.colorTone), label(sceneData.relations, s.subjectRelation)].filter((item) => item && item !== "指定しない").join(" ・ ");
   }
   const s = state.simple;
-  return [label(simpleData.styles, s.style), label(simpleData.types, s.backgroundType), label(simpleData.colors, s.colors.primary), label(simpleData.relations, s.subjectRelation)].filter(Boolean).join(" ・ ");
+  const event = eventById(s.eventTheme)?.label || "";
+  const profile = profileById(s.designProfile)?.label || "";
+  return [event, profile, label(simpleData.styles, s.style), label(simpleData.types, s.backgroundType), label(simpleData.colors, s.colors.primary), label(simpleData.relations, s.subjectRelation)].filter(Boolean).join(" ・ ");
 }

@@ -4,13 +4,14 @@ import { ChangeEvent, ReactNode, useEffect, useMemo, useRef, useState } from "re
 import { ViewDiagram } from "./components/view-diagram.tsx";
 import { enforceExclusions, getAdvice } from "./lib/advisor.ts";
 import type { Advice } from "./lib/advisor.ts";
-import { createDefaultState, optionById, optionsForGroup, presetGroups, presets, sceneData, simpleData } from "./lib/background-data.ts";
+import { basicMotifIds, createDefaultState, optionById, optionsForGroup, presetGroups, presets, sceneData, simpleData } from "./lib/background-data.ts";
 import type { BackgroundMode, BackgroundState, Option, PresetGroup } from "./lib/background-data.ts";
 import { generateOutput, japaneseSummary, negativeItemAvailability, negativeOptions, negativeSupport } from "./lib/generator.ts";
 import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage, exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode } from "./lib/state-utils.ts";
 import type { SavedDesign } from "./lib/state-utils.ts";
 import { dynamicMotions, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "./lib/view-data.ts";
 import { getViewAvailability, stageProfile, viewSummary } from "./lib/view-rules.ts";
+import { designProfiles, eventById, eventGroups, eventMotifIds, eventThemes, motifFamilies, profileById, seasonalMotifById, seasonalMotifs } from "./lib/seasonal-data.ts";
 
 // 保存キーは v1 から変えない（既存の保存を見失わないため）。中身は読み込み時に v2 へ移行する
 const DRAFT_KEY = "background_prompt_workshop_draft_v1";
@@ -37,6 +38,9 @@ const matches = (item: Option, query: string) => {
   const q = normalize(query);
   return !q || normalize(`${item.label}${item.kw || ""}${item.en}`).includes(q);
 };
+
+/** テイストの色見本（画面表示だけに使う。出力には関係しない） */
+const SWATCH: Record<string, string> = { white: "#ffffff", warm_gray: "#b9b2a8", pastel_pink: "#f6c6d6", lavender: "#cdbdf2", mint: "#bfe8d6", powder_blue: "#b9d3ea", cream: "#f4ead2", peach: "#f7c8a8", deep_navy: "#1d2a4a", black: "#141414", sage: "#b5c7a8", burgundy: "#7a2238", gold: "#d8b96a" };
 
 /* ------------------------------------------------------------------ */
 /* 小さな部品                                                         */
@@ -101,6 +105,7 @@ export default function Home() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [structureQuery, setStructureQuery] = useState("");
   const [showAllStructures, setShowAllStructures] = useState(false);
+  const [showAllMotifs, setShowAllMotifs] = useState(false);
   /** リセット時に設定欄を作り直し、折りたたみ・入力中の検索語などの一時的な表示状態も初期化する */
   const [builderKey, setBuilderKey] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
@@ -166,13 +171,29 @@ export default function Home() {
     setPresetGroup("recommended");
   };
   const applyAdvice = (item: Advice) => {
-    if (!item.patch) return; if (item.patch.multi) toggle(item.patch.path, item.patch.value); else update(item.patch.path, item.patch.value); setToast("提案を反映しました");
+    if (!item.patch) return; if (item.patch.multi) toggle(item.patch.path, String(item.patch.value)); else update(item.patch.path, item.patch.value); setToast("提案を反映しました");
   };
   const applyPreset = (presetId: string) => {
     const preset = presets.find((item) => item.id === presetId); if (!preset) return;
     // 生成先の設定はプリセットで変えない
     setState((current) => enforceExclusions(migrateState({ ...current, ...clone(preset.patch), backgroundMode: preset.mode, target: current.target })));
     setToast(`「${preset.label}」を読み込みました`);
+  };
+  /** 季節・イベントを選ぶ。おすすめのモチーフ（1〜2種類）・人物を邪魔しない置き場所・まばらを入れる。色やテイストは変えない */
+  const selectEvent = (id: string, force = false) => {
+    const event = eventById(id);
+    if (!event) { update("simple.eventTheme", ""); return; }
+    if (!force && state.simple.eventTheme === id) return;
+    setState((current) => ({ ...current, simple: { ...current.simple, eventTheme: id, decoration: { enabled: true, motifs: [...event.starter], placement: event.placement, density: "sparse" } } }));
+    setShowAllMotifs(false);
+    setToast(`「${event.label}」のおすすめ装飾を入れました`);
+  };
+  /** テイストを選ぶ。色・背景タイプ・質感だけを変え、装飾とイベントはそのまま */
+  const selectProfile = (id: string) => {
+    const profile = profileById(id);
+    if (!profile) { update("simple.designProfile", ""); return; }
+    setState((current) => enforceExclusions({ ...current, simple: { ...current.simple, ...clone(profile.patch), pattern: profile.patch.pattern || "", texture: profile.patch.texture || "", designProfile: id } }));
+    setToast(`「${profile.label}」の色と質感にしました`);
   };
   const applyRecipe = (id: string) => {
     const next = viewFromRecipe(id); if (!next) return;
@@ -185,7 +206,7 @@ export default function Home() {
   };
   const copyPrompt = () => copy(result.positive, "プロンプトをコピーしました");
   const clearTransientUi = () => {
-    setPlaceQuery(""); setStructureQuery(""); setShowAllStructures(false); setBuilderKey((key) => key + 1);
+    setPlaceQuery(""); setStructureQuery(""); setShowAllStructures(false); setShowAllMotifs(false); setBuilderKey((key) => key + 1);
   };
   const resetToDefaults = () => {
     if (!window.confirm(defaultsConfirmationMessage(state.backgroundMode))) return;
@@ -254,6 +275,22 @@ export default function Home() {
     .sort((a, b) => (recommendedEffects.includes(a.id) ? recommendedEffects.indexOf(a.id) : 99) - (recommendedEffects.includes(b.id) ? recommendedEffects.indexOf(b.id) : 99))
     .map((item) => ({ id: item.id, label: `${item.label}${item.note ? "※" : ""}` }));
   const effectNote = [recommendedEffects.length ? `この動きに合う演出：${recommendedEffects.map((id) => labelOf(viewData.motionEffects, id)).join("・")}` : "", "入れすぎると画面が騒がしくなります。※は画風や線画に影響しやすい演出です。"].filter(Boolean).join("　");
+
+  // ---- シンプル背景：季節・イベントとテイスト ----
+  const activeEvent = eventById(simple.eventTheme);
+  const activeProfile = profileById(simple.designProfile);
+  const motifOption = (id: string) => simpleData.motifs.find((item) => item.id === id);
+  const baseMotifIds = activeEvent ? eventMotifIds(activeEvent) : basicMotifIds;
+  const shownMotifIds = [...baseMotifIds, ...simple.decoration.motifs.filter((id) => !baseMotifIds.includes(id))];
+  const shownMotifs = shownMotifIds.map(motifOption).filter((item): item is Option => Boolean(item));
+  const moreMotifGroups = [
+    { id: "basic", label: "基本", ids: basicMotifIds },
+    ...motifFamilies.map((family) => ({ id: family.id, label: family.label, ids: seasonalMotifs.filter((item) => item.family === family.id).map((item) => item.id) })),
+  ].map((group) => ({ ...group, options: group.ids.filter((id) => !shownMotifIds.includes(id)).map(motifOption).filter((item): item is Option => Boolean(item)) })).filter((group) => group.options.length);
+  const hiddenMotifCount = moreMotifGroups.reduce((sum, group) => sum + group.options.length, 0);
+  const motifNotes = simple.decoration.enabled ? simple.decoration.motifs.map(seasonalMotifById).filter((item) => item?.note).map((item) => ({ id: item!.id, text: `${item!.label}：${item!.note}` })) : [];
+  const orderedProfiles = activeEvent ? [...activeEvent.profiles.map((id) => profileById(id)!).filter(Boolean), ...designProfiles.filter((item) => !activeEvent.profiles.includes(item.id))] : designProfiles;
+  const eventSummary = activeEvent ? `${activeEvent.label}（${activeEvent.period}）` : "選ばない（ふだんのシンプル背景）";
 
   const relationOptions = state.backgroundMode === "scene" ? sceneData.relations : simpleData.relations;
   const relationValue = state.backgroundMode === "scene" ? scene.subjectRelation : simple.subjectRelation;
@@ -404,7 +441,33 @@ export default function Home() {
             </Section>
           </Step>
         </> : <>
-          <Step index={1} title="どんな背景面？" summary={joinJa([labelOf(simpleData.styles, simple.style), labelOf(simpleData.types, simple.backgroundType), simple.backgroundType === "pattern" ? shown(labelOf(simpleData.patterns, simple.pattern)) : "", simple.backgroundType === "texture" ? shown(labelOf(simpleData.textures, simple.texture)) : ""])}>
+          <Step index={1} title="どんな背景面？" summary={joinJa([activeEvent?.label || "", activeProfile?.label || "", labelOf(simpleData.styles, simple.style), labelOf(simpleData.types, simple.backgroundType), simple.backgroundType === "pattern" ? shown(labelOf(simpleData.patterns, simple.pattern)) : "", simple.backgroundType === "texture" ? shown(labelOf(simpleData.textures, simple.texture)) : ""])}>
+            <Section title="季節・イベント（任意）" summary={eventSummary} tone="event-section">
+              <p className="choice-note">選ぶと、その行事らしいモチーフを1〜2種類、人物を邪魔しにくい位置に「まばら」で入れます。色や雰囲気は変えません。</p>
+              <div className="event-rows" role="group" aria-label="季節・イベント">
+                <div className="chips"><button type="button" className={`chip is-unset ${!activeEvent ? "is-selected" : ""}`} aria-pressed={!activeEvent} onClick={() => selectEvent("")}>選ばない{!activeEvent && <span aria-hidden>✓</span>}</button></div>
+                {eventGroups.map((group) => <div className="event-row" key={group.id}>
+                  <span className="event-row-label">{group.label}</span>
+                  <div className="chips">{eventThemes.filter((item) => item.group === group.id).map((item) => <button key={item.id} type="button" className={`chip ${simple.eventTheme === item.id ? "is-selected" : ""}`} aria-pressed={simple.eventTheme === item.id} onClick={() => selectEvent(item.id)}>{item.label}{simple.eventTheme === item.id && <span aria-hidden>✓</span>}</button>)}</div>
+                </div>)}
+              </div>
+              {activeEvent && <div className="event-info">
+                <p><b>{activeEvent.label}</b>　{activeEvent.period}。おすすめの装飾：{activeEvent.starter.map((id) => motifOption(id)?.label).join("・")}</p>
+                {activeEvent.note && <p className="choice-note">{activeEvent.note}</p>}
+                <button type="button" className="text-button" onClick={() => selectEvent(activeEvent.id, true)}>おすすめの装飾を入れ直す</button>
+              </div>}
+            </Section>
+            <Section title="テイスト（任意）" summary={activeProfile ? `${activeProfile.label}（${activeProfile.description}）` : "選ばない"} tone="profile-section">
+              <p className="choice-note">同じイベントでも、テイストで見た目を変えられます。選ぶと色・背景タイプ・質感が変わります（装飾はそのまま）。</p>
+              <div className="profile-list" role="group" aria-label="テイスト">
+                <button type="button" className={`profile-card is-unset ${!activeProfile ? "is-selected" : ""}`} aria-pressed={!activeProfile} onClick={() => selectProfile("")}><strong>選ばない</strong><small>今の色のまま</small></button>
+                {orderedProfiles.map((item) => <button type="button" key={item.id} className={`profile-card ${simple.designProfile === item.id ? "is-selected" : ""}`} aria-pressed={simple.designProfile === item.id} onClick={() => selectProfile(item.id)}>
+                  <span className="swatches" aria-hidden>{[item.patch.colors.primary, item.patch.colors.secondary].filter(Boolean).map((color) => <i key={color} style={{ background: SWATCH[color] }} />)}</span>
+                  <strong>{item.label}{simple.designProfile === item.id && <span aria-hidden> ✓</span>}</strong>
+                  <small>{activeEvent?.profiles.includes(item.id) ? <em>おすすめ</em> : null}{item.description}</small>
+                </button>)}
+              </div>
+            </Section>
             <ChoiceGroup label="スタイル" options={simpleData.styles} value={simple.style} onChange={(id) => update("simple.style", id)} />
             <ChoiceGroup label="背景タイプ" options={simpleData.types} value={simple.backgroundType} onChange={(id) => update("simple.backgroundType", id)} />
             {simple.backgroundType === "pattern" && <ChoiceGroup label="柄" options={simpleData.patterns} value={simple.pattern} onChange={(id) => update("simple.pattern", id)} />}
@@ -420,10 +483,14 @@ export default function Home() {
             <Section title="装飾" summary={simple.decoration.enabled ? joinJa([...labelsOf(simpleData.motifs, simple.decoration.motifs), shown(labelOf(simpleData.placements, simple.decoration.placement)), shown(labelOf(simpleData.decorationDensities, simple.decoration.density))]) || "モチーフ未選択" : "装飾なし"}>
               <ChoiceGroup label="装飾の有無" options={[{ id: "off", label: "なし" }, { id: "on", label: "入れる" }]} value={simple.decoration.enabled ? "on" : "off"} onChange={(id) => update("simple.decoration.enabled", id === "on")} />
               {simple.decoration.enabled ? <>
-                <ChoiceGroup label="モチーフ" options={simpleData.motifs} value={simple.decoration.motifs} multi max={3} onChange={(id) => toggle("simple.decoration.motifs", id, 3)} />
+                {simple.subjectRelation !== "background_only" && <p className="choice-note">人物を目立たせたいなら、モチーフは1〜2種類・端か上側・まばらがおすすめです。</p>}
+                <ChoiceGroup label={activeEvent ? `モチーフ（「${activeEvent.label}」のおすすめ）` : "モチーフ"} options={shownMotifs} value={simple.decoration.motifs} multi max={3} onChange={(id) => toggle("simple.decoration.motifs", id, 3)} />
+                {motifNotes.length > 0 && <ul className="motif-notes">{motifNotes.map((note) => <li key={note.id}>{note.text}</li>)}</ul>}
+                {hiddenMotifCount > 0 && <button type="button" className="text-button motif-more" aria-expanded={showAllMotifs} onClick={() => setShowAllMotifs((value) => !value)}>{showAllMotifs ? "おすすめだけにする" : `ほかのモチーフも見る（${hiddenMotifCount}件）`}</button>}
+                {showAllMotifs && <div className="motif-more-groups">{moreMotifGroups.map((group) => <ChoiceGroup key={group.id} label={group.label} options={group.options} value={simple.decoration.motifs} multi onChange={(id) => toggle("simple.decoration.motifs", id, 3)} />)}</div>}
                 <ChoiceGroup label="置く場所" options={simpleData.placements} value={simple.decoration.placement} onChange={(id) => update("simple.decoration.placement", id)} />
                 <ChoiceGroup label="量" options={simpleData.decorationDensities} value={simple.decoration.density} onChange={(id) => update("simple.decoration.density", id)} />
-              </> : <p className="choice-note">装飾は出力に入りません。選んでいたモチーフは残っているので、「入れる」に戻すと元に戻ります。</p>}
+              </> : <p className="choice-note">装飾は出力に入りません{activeEvent ? `（「${activeEvent.label}」のモチーフも入りません）` : ""}。選んでいたモチーフは残っているので、「入れる」に戻すと元に戻ります。</p>}
             </Section>
           </Step>
         </>}

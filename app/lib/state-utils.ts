@@ -1,6 +1,7 @@
 import { createDefaultState, createDefaultTarget, sceneData, simpleData } from "./background-data.ts";
 import type { BackgroundMode, BackgroundState, Option } from "./background-data.ts";
 import { createDefaultView, viewData } from "./view-data.ts";
+import { designProfiles, eventThemes } from "./seasonal-data.ts";
 
 export const CURRENT_VERSION = 2 as const;
 export type SavedDesign = { id: string; name: string; savedAt: string; state: BackgroundState };
@@ -32,7 +33,7 @@ export function resetActiveMode(state: BackgroundState, confirmed = true): Backg
  * 表示中のモードの「任意の選択」をすべて外す（新規作成）。
  * - 空間背景：場所（空間タイプ・カテゴリ・舞台）と人物との比重は残し、それ以外の任意項目を未指定にする。
  *   折りたたまれた項目や、条件で非表示の項目（高度・動き・窓の種類など）も対象。見え方は標準に戻す。
- * - シンプル背景：スタイル・メインカラー・人物との関係は残し、副色・質感・柄・装飾を外す。
+ * - シンプル背景：スタイル・メインカラー・人物との関係は残し、副色・質感・柄・装飾・季節イベント・テイストを外す。
  *   柄背景／質感背景は、柄・素材を外すと意味を失うため単色に戻す。濃さは「標準」にする。
  * - 生成先・出力形式・もう一方のモードはそのまま。
  */
@@ -67,6 +68,8 @@ export function clearActiveMode(state: BackgroundState, confirmed = true): Backg
       pattern: "",
       texture: "",
       decoration: { enabled: false, motifs: [], placement: "", density: "" },
+      eventTheme: "",
+      designProfile: "",
     },
   };
 }
@@ -74,7 +77,7 @@ export function clearActiveMode(state: BackgroundState, confirmed = true): Backg
 export function clearConfirmationMessage(mode: BackgroundMode) {
   return mode === "scene"
     ? "空間背景の任意の選択（世界観・構成物・天気・光・雰囲気・奥行き・見え方など）をすべて外します。\n場所・人物と背景の比重・生成先・出力形式はそのままです。保存一覧は消えません。"
-    : "シンプル背景の任意の選択（サブカラー・質感・柄・装飾など）をすべて外します。\nスタイル・メインカラー・人物との関係・生成先はそのままです。保存一覧は消えません。";
+    : "シンプル背景の任意の選択（サブカラー・質感・柄・装飾・季節イベントなど）をすべて外します。\nスタイル・メインカラー・人物との関係・生成先はそのままです。保存一覧は消えません。";
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,6 +98,10 @@ function pickMany(value: unknown, list: { id: string }[], fallback: string[]): s
   if (!Array.isArray(value)) return fallback;
   const known = ids(list);
   return [...new Set(value.filter((item): item is string => typeof item === "string" && known.has(item)))];
+}
+/** 任意の単一選択：既知のIDならそのまま、それ以外（未指定・未知・壊れた値）は「選ばない」 */
+function pickOptional(value: unknown, list: { id: string }[]): string {
+  return typeof value === "string" && ids(list).has(value) ? value : "";
 }
 const section = (value: unknown): Dict => (isObject(value) ? value : {});
 const bool = (value: unknown, fallback: boolean) => (typeof value === "boolean" ? value : fallback);
@@ -220,6 +227,9 @@ export function migrateState(raw: unknown): BackgroundState {
         placement: pick(decoration.placement, simpleData.placements, d.simple.decoration.placement),
         density: pick(decoration.density, simpleData.decorationDensities, d.simple.decoration.density),
       },
+      // v2.2 で追加。v2.1 以前のデータには無いので「選ばない」で補う（出力は従来と同じ）
+      eventTheme: pickOptional(simple.eventTheme, eventThemes),
+      designProfile: pickOptional(simple.designProfile, designProfiles),
     },
     ui: {
       warningsDismissed: Array.isArray(ui.warningsDismissed) ? ui.warningsDismissed.filter((item): item is string => typeof item === "string") : [],

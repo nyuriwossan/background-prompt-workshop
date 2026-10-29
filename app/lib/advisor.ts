@@ -1,8 +1,10 @@
-import { sceneData } from "./background-data.ts";
+import { sceneData, simpleData } from "./background-data.ts";
+import { eventById, seasonalMotifById } from "./seasonal-data.ts";
+import { negativeSupport } from "./generator.ts";
 import type { BackgroundState } from "./background-data.ts";
 import { stageProfile } from "./view-rules.ts";
 
-export type Advice = { id: string; kind: "warning" | "suggestion"; title: string; body: string; actionLabel?: string; patch?: { path: string; value: string; multi?: boolean } };
+export type Advice = { id: string; kind: "warning" | "suggestion"; title: string; body: string; actionLabel?: string; patch?: { path: string; value: string | boolean; multi?: boolean } };
 
 const has = (list: string[], id: string) => list.includes(id);
 
@@ -39,14 +41,74 @@ export function getAdvice(state: BackgroundState): Advice[] {
     if (s.environment.timeOfDay === "night" && profile.indoor && s.lighting.primarySource === "natural") result.push({ id: "night-natural-indoor", kind: "warning", title: "夜の室内に自然光", body: "夜なら室内灯・ろうそくなど、光の理由がある光源が自然です。", actionLabel: "暖かな室内灯", patch: { path: "scene.lighting.primarySource", value: "warm_indoor" } });
   } else {
     const s = state.simple;
-    if (s.style === "plain" && s.decoration.enabled && s.decoration.motifs.length > 1) result.push({ id: "plain-decor", kind: "warning", title: "プレーン背景には装飾が多め", body: "装飾を1つに絞ると、無地寄りの意図が保てます。" });
-    if (s.style === "purikura" && ["deep", "dark"].includes(s.colors.intensity)) result.push({ id: "purikura-dark", kind: "warning", title: "プリクラ風には色が重め", body: "淡い色にすると、軽くかわいい印象が安定します。", actionLabel: "淡くする", patch: { path: "simple.colors.intensity", value: "soft" } });
+    // 端・四隅・上側に「まばら」で置く季節装飾は、プレーンでも無地寄りの意図を保てるので警告しない
+    const edgeSparse = ["edges", "corners", "upper"].includes(s.decoration.placement) && s.decoration.density === "sparse";
+    if (s.style === "plain" && s.decoration.enabled && s.decoration.motifs.length > 1 && !edgeSparse) result.push({ id: "plain-decor", kind: "warning", title: "プレーン背景には装飾が多め", body: "装飾を1つに絞ると、無地寄りの意図が保てます。" });
+    if (s.style === "purikura" && ["deep", "dark"].includes(s.colors.intensity) && s.designProfile !== "dark_kawaii") result.push({ id: "purikura-dark", kind: "warning", title: "プリクラ風には色が重め", body: "淡い色にすると、軽くかわいい印象が安定します。", actionLabel: "淡くする", patch: { path: "simple.colors.intensity", value: "soft" } });
     if (s.subjectRelation === "character_focus" && s.decoration.motifs.length > 2) result.push({ id: "simple-focus", kind: "warning", title: "装飾が人物と競合しそう", body: "人物を目立たせるならモチーフは2種類までがおすすめです。" });
     if (s.style === "purikura" && s.colors.primary === "pastel_pink" && !s.decoration.motifs.includes("subtle_sparkles")) result.push({ id: "pink-sparkle", kind: "suggestion", title: "ピンクに軽いきらめき", body: "小さなきらめきなら、人物を邪魔せずプリクラ感が出ます。", actionLabel: "きらきらを追加", patch: { path: "simple.decoration.motifs", value: "subtle_sparkles", multi: true } });
     if (s.style === "soft" && s.colors.primary === "powder_blue" && !s.rendering.includes("gentle_blur")) result.push({ id: "blue-blur", kind: "suggestion", title: "青系をやわらかく", body: "ぼかしを足すと空気感が整います。", actionLabel: "ぼかしを追加", patch: { path: "simple.rendering", value: "gentle_blur", multi: true } });
     if (s.backgroundType === "pattern" && !s.pattern) result.push({ id: "pattern-missing", kind: "suggestion", title: "柄を選ぶと安定します", body: "「柄背景」は、具体的な柄を1つ選ぶと狙いが伝わりやすくなります。", actionLabel: "格子にする", patch: { path: "simple.pattern", value: "geometric_grid" } });
     if (s.backgroundType === "texture" && !s.texture) result.push({ id: "texture-missing", kind: "suggestion", title: "素材を選ぶと安定します", body: "「質感背景」は、紙・布などの素材を選ぶと質感が出ます。", actionLabel: "紙にする", patch: { path: "simple.texture", value: "paper" } });
     if (s.subjectRelation === "character_focus" && s.decoration.enabled && s.decoration.density === "dense") result.push({ id: "dense-decor", kind: "warning", title: "装飾が多めです", body: "人物を目立たせるなら、密度は「まばら」か「ほどほど」が安定します。", actionLabel: "ほどほどにする", patch: { path: "simple.decoration.density", value: "moderate" } });
+    result.push(...seasonalAdvice(state));
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* v2.2 季節・イベント装飾：人物を邪魔しない・見分けにくい組み合わせを避ける     */
+/* ------------------------------------------------------------------ */
+
+const motifLabel = (id: string) => simpleData.motifs.find((item) => item.id === id)?.label || id;
+const PLACE_SHORT: Record<string, string> = { edges: "フチ", corners: "四隅", upper: "上側", scattered: "全体" };
+const PLACE_ACTION: Record<string, string> = { edges: "フチに寄せる", corners: "四隅に寄せる", upper: "上側に寄せる", scattered: "全体に散らす" };
+
+function seasonalAdvice(state: BackgroundState): Advice[] {
+  const s = state.simple;
+  if (!s.decoration.enabled || !s.decoration.motifs.length) return [];
+  const result: Advice[] = [];
+  const chosen = s.decoration.motifs;
+  const seasonal = chosen.map(seasonalMotifById).filter((item) => item !== undefined);
+  const event = eventById(s.eventTheme);
+  if (!seasonal.length && !event) return [];
+
+  // 1. 見分けにくい・文化が混ざる組み合わせ（後から選んだほうを外す提案）
+  for (const motif of seasonal) {
+    const clash = (motif.conflicts || []).find((id) => chosen.includes(id) && chosen.indexOf(id) > chosen.indexOf(motif.id));
+    const reverse = chosen.find((id) => id !== motif.id && chosen.indexOf(id) > chosen.indexOf(motif.id) && seasonalMotifById(id)?.conflicts?.includes(motif.id));
+    const other = clash || reverse;
+    if (!other) continue;
+    const otherMotif = seasonalMotifById(other);
+    const cultural = Boolean(motif.culture && otherMotif?.culture && motif.culture !== otherMotif.culture);
+    result.push({
+      id: "motif-conflict", kind: "warning",
+      title: cultural ? "別の文化の飾りが混ざっています" : "見分けにくい組み合わせです",
+      body: cultural
+        ? `「${motif.label}」と「${motifLabel(other)}」は別の行事の飾りです。どちらか一方にすると、行事がはっきり伝わります。`
+        : `「${motif.label}」と「${motifLabel(other)}」は形や光が似ていて、混ざって描かれやすい組み合わせです。`,
+      actionLabel: `「${motifLabel(other)}」を外す`, patch: { path: "simple.decoration.motifs", value: other, multi: true },
+    });
+    break;
+  }
+
+  // 2. 人物がいるときは、季節の装飾を端・四隅・上側に寄せる（中央・顔まわりを空ける）
+  const person = s.subjectRelation !== "background_only";
+  const prefer = seasonal[0]?.prefer[0] || event?.placement || "edges";
+  if (person && (s.decoration.placement === "" || s.decoration.placement === "scattered")) {
+    result.push({ id: "seasonal-edge", kind: "suggestion", title: "顔や衣装に重ならないように", body: "人物を目立たせたいなら、季節のモチーフは1〜2種類・端か上側・まばらがおすすめです。", actionLabel: PLACE_ACTION[prefer], patch: { path: "simple.decoration.placement", value: prefer } });
+  } else if (person && s.decoration.placement) {
+    // 3. モチーフに向かない置き場所（しめ縄を四隅に、など）
+    const mismatch = seasonal.find((motif) => !motif.prefer.includes(s.decoration.placement as never));
+    if (mismatch) result.push({ id: "motif-placement", kind: "suggestion", title: `「${mismatch.label}」は${mismatch.prefer.map((id) => PLACE_SHORT[id]).join("・")}向きです`, body: "置く場所は装飾全体で1つです。合わないモチーフがあるときは、どちらかに絞ると自然に収まります。", actionLabel: PLACE_ACTION[mismatch.prefer[0]], patch: { path: "simple.decoration.placement", value: mismatch.prefer[0] } });
+  }
+
+  // 4. 文字が入りやすいモチーフ（短冊・証書・ペナントなど）は、ネガティブで文字を外す
+  const textRisk = seasonal.find((motif) => motif.textRisk);
+  if (textRisk && negativeSupport(state).supported) {
+    const t = state.target;
+    if (!t.negativeEnabled) result.push({ id: "motif-text", kind: "suggestion", title: "文字が入りやすいモチーフです", body: `「${textRisk.label}」には文字やロゴが描かれることがあります。ネガティブで「文字・ロゴ」を外すと安定します。`, actionLabel: "ネガティブを作る", patch: { path: "target.negativeEnabled", value: true } });
+    else if (!t.negativeItems.includes("text")) result.push({ id: "motif-text", kind: "suggestion", title: "文字が入りやすいモチーフです", body: `「${textRisk.label}」には文字やロゴが描かれることがあります。ネガティブに「文字・ロゴ」を入れると安定します。`, actionLabel: "文字・ロゴを外す", patch: { path: "target.negativeItems", value: "text", multi: true } });
   }
   return result;
 }

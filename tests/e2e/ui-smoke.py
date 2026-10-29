@@ -10,6 +10,7 @@
 - スマホ幅で「場所を検索 → 見え方 → 生成先 → コピー」が完結し、横スクロールが出ない
 - 屋内の舞台で空中の視点が非活性になり、理由が表示される
 - 非活性になった値（高度など）がプロンプトに混ざらない
+- シンプル背景で季節イベントを選ぶと、関連モチーフが優先表示され、装飾の有無・テイスト・プリセット・保存→再読込が正しく動く
 """
 import json
 import pathlib
@@ -214,6 +215,91 @@ with sync_playwright() as p:
     page.locator(".preset-list button", has_text="上空から城全体を見る").click()
     check("as the viewpoint" not in prompt_text(page) and "foreshortening" not in prompt_text(page), "静的な構図に動きが混ざらない")
     check(page.locator(".step").nth(1).locator("fieldset", has_text="動きの演出").count() == 0, "静止の構図では演出欄を出さない")
+    ctx.close()
+
+    # ---------------- 季節イベント（シンプル背景・スマホ） ----------------
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(URL)
+    page.evaluate("localStorage.clear()")
+    page.reload()
+    page.wait_for_selector(".output-card")
+    page.get_by_role("button", name="シンプル背景").first.click()
+    base_prompt = prompt_text(page)
+    step1 = page.locator(".step").nth(0)
+    step3 = page.locator(".step").nth(2)
+    event_section = step1.locator("details.event-section")
+    check(event_section.get_attribute("open") is None, "季節・イベントは最初は閉じている")
+    check("選ばない" in event_section.locator("summary").inner_text(), "イベント未選択が見出しで分かる")
+    event_section.locator("summary").click()
+    event_section.locator(".event-row .chip", has_text="クリスマス").click()
+    text = prompt_text(page)
+    check("holly" in text and "bauble" in text, "クリスマスを選ぶとおすすめのモチーフが入る：" + text)
+    check("concentrated toward the top" in text and "sparse" in text and "leaving the center open" in text, "上側・まばら・中央を空ける指定が入る")
+    check("クリスマス" in event_section.locator("summary").inner_text(), "見出しの要約にイベント名が出る")
+    deco = step3.locator("details.section-card", has_text="装飾")
+    deco.locator("summary").click()
+    legend = deco.locator("fieldset", has_text="おすすめ").first
+    chips = [t.replace("✓", "").strip() for t in legend.locator(".chip").all_inner_texts()]
+    check(chips[:3] == ["ヒイラギ", "オーナメント", "雪の結晶"], "関連モチーフが先頭に並ぶ：" + "、".join(chips))
+    check("ジャック・オ・ランタン" not in chips, "別のイベントのモチーフは最初は並ばない")
+    deco.locator(".motif-more").click()
+    check(deco.locator(".motif-more-groups .chip", has_text="ジャック・オ・ランタン").count() == 1, "「ほかのモチーフも見る」で全モチーフを選べる")
+    deco.locator(".motif-more").click()
+    # 装飾なし → イベントのモチーフは出力されない
+    deco.locator(".chip", has_text="なし").first.click()
+    off = prompt_text(page)
+    check("holly" not in off and "bauble" not in off and "center open" not in off, "装飾なしではイベントのモチーフが出力されない")
+    check(deco.locator("fieldset", has_text="おすすめ").count() == 0, "装飾なしではモチーフ選択を閉じる")
+    deco.locator(".chip", has_text="入れる").first.click()
+    check("holly" in prompt_text(page), "入れるに戻すとモチーフが戻る")
+    # テイスト：イベントを保ったまま見た目だけ変わる
+    profile = step1.locator("details.profile-section")
+    profile.locator("summary").click()
+    check(profile.locator(".profile-card").nth(1).inner_text().find("クラシックホリデー") >= 0, "イベントに合うテイストが先頭に並ぶ")
+    profile.locator(".profile-card", has_text="ゆめかわ").click()
+    dreamy = prompt_text(page)
+    check("lavender" in dreamy and "holly" in dreamy and "iridescent" in dreamy, "テイストで色が変わり、イベントのモチーフは残る")
+    page.screenshot(path=str(OUT / "mobile-6-seasonal.png"), full_page=True)
+    check(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "季節イベントの画面でも横スクロールが出ない")
+    # イベントを外しても、モチーフと色は残る
+    event_section.locator(".chip", has_text="選ばない").click()
+    check(prompt_text(page) == dreamy, "イベントを外しても選んだモチーフと色は残る")
+    # 保存 → 再読み込みで保持
+    event_section.locator(".event-row .chip", has_text="お月見").click()
+    moon = prompt_text(page)
+    page.reload()
+    page.wait_for_selector(".output-card")
+    check(prompt_text(page) == moon and "moon" in moon, "再読み込み後もイベントの設計が残る")
+    page.locator(".mobile-dock button", has_text="保存").click()
+    page.locator(".modal input").fill("お月見テスト")
+    page.locator(".modal .primary-button").click()
+    page.once("dialog", lambda d: d.accept())
+    page.locator(".reset-tools button", has_text="選択をクリア").click()
+    check("moon" not in prompt_text(page), "クリアするとイベントのモチーフも外れる")
+    page.get_by_role("button", name="保存一覧").click()
+    page.locator(".saved-list article", has_text="お月見テスト").locator("button", has_text="開く").click()
+    check(prompt_text(page) == moon, "保存した設計を開くとイベントの設計が戻る")
+    page.locator(".step").nth(0).locator("details.event-section summary").click()
+    check(page.locator(".step").nth(0).locator(".event-row .chip.is-selected", has_text="お月見").count() == 1, "開いた設計でイベントが選択状態になる")
+    # プリセット
+    page.locator(".preset-groups button", has_text="行事・記念日").click()
+    page.locator(".preset-list button", has_text="七夕の笹飾り").click()
+    tanabata = prompt_text(page)
+    check("tanzaku" in tanabata and "bamboo" in tanabata, "季節プリセットで選択が反映される")
+    page.locator(".step").nth(0).locator("details.event-section summary").click()
+    check(page.locator(".step").nth(0).locator(".event-row .chip.is-selected", has_text="七夕").count() == 1, "プリセットのイベントが選択状態になる")
+    page.locator(".output-card .chip", has_text="NovelAI").click()
+    check("tanzaku" in prompt_text(page) and "sparse decorations" in prompt_text(page), "NovelAI短縮版にも配置と量が入る")
+    check(page.locator(".negative-block .prompt-box", has_text="text").count() == 1, "文字が入りやすいモチーフでも文字・ロゴを除外できる")
+    # 従来のシンプル背景はイベントなしでそのまま
+    page.locator(".preset-groups button", has_text="おすすめ").click()
+    page.locator(".preset-list button", has_text="プリクラ風ピンク").click()
+    page.locator(".output-card .chip", has_text="汎用").click()
+    check("center open" not in prompt_text(page) and "heart" in prompt_text(page), "イベントなしの従来プリセットは従来どおり")
+    check(not errors, "季節イベント操作中のページエラーなし " + "; ".join(errors))
     ctx.close()
 
     # ---------------- PC ----------------

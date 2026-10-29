@@ -1,5 +1,6 @@
 import { createDefaultView } from "./view-data.ts";
 import type { ViewState } from "./view-data.ts";
+import { seasonalMotifs } from "./seasonal-data.ts";
 
 /**
  * id     : 保存データにも残る安定ID（変更しない）
@@ -30,7 +31,7 @@ export type OutputStyle = "short" | "detailed";
 export type Platform = "generic" | "pixai" | "novelai";
 export type PixaiModel = "tsubaki" | "tag";
 export type ScenePresetGroup = "recommended" | "nature_water" | "city_daily" | "japan" | "fantasy_history" | "horror_ruin" | "scifi_special" | "view_examples";
-export type SimplePresetGroup = "recommended" | "plain" | "soft" | "purikura" | "pattern";
+export type SimplePresetGroup = "recommended" | "season" | "event" | "plain" | "soft" | "purikura" | "pattern" | "world";
 export type PresetGroup = ScenePresetGroup | SimplePresetGroup;
 
 export type TargetSettings = {
@@ -70,6 +71,10 @@ export type BackgroundState = {
     pattern: string;
     texture: string;
     decoration: { enabled: boolean; motifs: string[]; placement: string; density: string };
+    /** v2.2：季節・イベント（seasonal-data.ts の eventThemes）。空なら選ばない。出力には直接書かず、候補の絞り込みに使う */
+    eventTheme: string;
+    /** v2.2：デザインのテイスト（designProfiles）。空なら選ばない。既存の項目で表せない見た目だけを出力に足す */
+    designProfile: string;
   };
   ui: { warningsDismissed: string[]; expandedSections: string[] };
 };
@@ -426,7 +431,9 @@ export const simpleData = {
   patterns: [unset(), o("geometric_grid", "格子", "a fine geometric grid pattern", undefined, { tag: "grid background" }), o("stripes", "ストライプ", "a soft striped pattern", undefined, { tag: "striped background" }), o("checkered", "チェック", "a subtle checkered pattern", undefined, { tag: "checkered background" }), o("polka_dots", "水玉", "an even polka dot pattern", undefined, { tag: "polka dot background" }), o("triangles", "三角形の幾何学", "a repeating triangle geometric pattern", undefined, { tag: "geometric pattern" }), o("circles", "円の反復", "repeating overlapping circles", undefined, { tag: "circle pattern" }), o("wavy_lines", "波線", "gentle wavy line patterns", undefined, { tag: "wavy lines" }), o("argyle", "アーガイル", "a classic argyle pattern", undefined, { tag: "argyle background" }), o("japanese_seigaiha", "青海波（和柄）", "a traditional seigaiha wave pattern", undefined, { tag: "seigaiha, japanese pattern" })],
   /** 素材の質感（背景タイプが「質感背景」のときに使う） */
   textures: [unset(), o("paper", "紙", "fine paper texture with soft fibers", undefined, { tag: "paper texture" }), o("watercolor_paper", "水彩紙", "watercolor paper texture", undefined, { tag: "watercolor paper" }), o("fabric", "布", "woven fabric texture", undefined, { tag: "fabric texture" }), o("velvet", "ベルベット", "rich velvet texture with a soft sheen", undefined, { tag: "velvet" }), o("linen", "リネン", "natural linen texture", undefined, { tag: "linen texture" }), o("metallic", "金属", "brushed metallic texture", undefined, { tag: "metallic texture" }), o("marble", "大理石", "polished marble texture", undefined, { tag: "marble texture" }), o("frosted_glass", "すりガラス", "frosted glass texture", undefined, { tag: "frosted glass" })],
-  motifs: [o("tiny_hearts", "ハート", "tiny heart motifs"), o("small_stars", "星", "small star motifs"), o("subtle_sparkles", "きらきら", "subtle sparkles"), o("soft_dots", "ドット", "soft dot accents"), o("tiny_flowers", "小花", "tiny floral motifs"), o("ribbons", "リボン", "delicate ribbon motifs"), o("lace_trim", "レース", "lace trim details"), o("tiny_bubbles", "しゃぼん玉", "tiny floating bubbles"), o("little_clouds", "小さな雲", "little cloud motifs")],
+  /** 基本の9件（v1から）＋季節・イベントのモチーフ（seasonal-data.ts で一度だけ定義） */
+  motifs: [o("tiny_hearts", "ハート", "tiny heart motifs"), o("small_stars", "星", "small star motifs"), o("subtle_sparkles", "きらきら", "subtle sparkles"), o("soft_dots", "ドット", "soft dot accents"), o("tiny_flowers", "小花", "tiny floral motifs"), o("ribbons", "リボン", "delicate ribbon motifs"), o("lace_trim", "レース", "lace trim details"), o("tiny_bubbles", "しゃぼん玉", "tiny floating bubbles"), o("little_clouds", "小さな雲", "little cloud motifs"),
+    ...seasonalMotifs.map((item) => o(item.id, item.label, item.en, undefined, { tag: item.tag, kw: item.kw }))],
   /** 装飾の位置 */
   placements: [unset("おまかせ"), o("scattered", "全体に散らす", "scattered across the backdrop"), o("edges", "フチに沿って", "arranged along the edges"), o("corners", "四隅に", "gathered in the corners"), o("upper", "上側に", "concentrated toward the top")],
   /** 装飾の密度 */
@@ -463,6 +470,7 @@ export const createDefaultState = (): BackgroundState => ({
     colors: { primary: "pastel_pink", secondary: "lavender", intensity: "soft" },
     rendering: ["diagonal_gradient", "center_glow", "gentle_blur"], pattern: "", texture: "",
     decoration: { enabled: true, motifs: ["subtle_sparkles"], placement: "", density: "" },
+    eventTheme: "", designProfile: "",
   },
   ui: { warningsDismissed: [], expandedSections: ["purpose", "stage"] },
 });
@@ -494,10 +502,13 @@ export const presetGroups: Record<BackgroundMode, { id: PresetGroup; label: stri
   ],
   simple: [
     { id: "recommended", label: "おすすめ" },
+    { id: "season", label: "季節" },
+    { id: "event", label: "行事・記念日" },
     { id: "plain", label: "プレーン" },
     { id: "soft", label: "ソフト" },
     { id: "purikura", label: "プリクラ風" },
     { id: "pattern", label: "柄・質感" },
+    { id: "world", label: "海外の行事" },
   ],
 };
 
@@ -1277,7 +1288,49 @@ export const presets: BackgroundPreset[] = [
     id: "lace_ribbon_pink", mode: "simple", group: "purikura", label: "レースとリボンのピンク", description: "フチに沿った甘い装飾",
     patch: simplePatch({ subjectRelation: "character_focus", style: "purikura", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "white", intensity: "very_light" }, rendering: ["radial_gradient", "center_glow"], decoration: { enabled: true, motifs: ["lace_trim", "ribbons"], placement: "edges", density: "moderate" } }),
   },
+  ...seasonalPresets(),
 ];
+
+/**
+ * v2.2 季節・イベントのプリセット（Manus提案20件をもとに整理）。
+ * すべて人物重視・モチーフ1〜2種類・端か上側・まばら。似た配色が続かないように色と配置を散らしている。
+ */
+function seasonalPresets(): BackgroundPreset[] {
+  type Values = Omit<Partial<BackgroundState["simple"]>, "decoration"> & { motifs: string[]; placement: string };
+  const make = (id: string, group: SimplePresetGroup, label: string, description: string, eventTheme: string, designProfile: string, values: Values): BackgroundPreset => {
+    const { motifs, placement, ...rest } = values;
+    return { id, mode: "simple", group, label, description, patch: simplePatch({ subjectRelation: "character_focus", pattern: "", texture: "", ...rest, eventTheme, designProfile, decoration: { enabled: true, motifs, placement, density: "sparse" } }) };
+  };
+  return [
+    // 季節
+    make("sakura_milk", "season", "桜ミルクの記念日", "散る桜を上側に少量", "sakura", "pastel_pop", { style: "soft", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "cream", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow", "gentle_blur"], motifs: ["scattered_cherry_blossom_petals"], placement: "upper" }),
+    make("fresh_green_mint", "season", "新緑ミント", "若葉を四隅に置く軽い春", "fresh_green", "spring_botanical", { style: "soft", backgroundType: "soft_abstract", colors: { primary: "mint", secondary: "cream", intensity: "very_light" }, rendering: ["subtle_variation", "gentle_blur"], motifs: ["fresh_green_leaf_sprigs"], placement: "corners" }),
+    make("summer_lantern_indigo", "season", "藍の夏祭り提灯", "藍の夜に小さな提灯だけ", "summer_festival", "festival_night", { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "gold", intensity: "dark" }, rendering: ["radial_gradient", "soft_glow", "light_bloom"], motifs: ["tiny_paper_lanterns"], placement: "upper" }),
+    make("summer_firework_pop", "season", "桃色花火ポップ", "花火とうちわを四隅に", "summer_festival", "vivid_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "peach", intensity: "medium" }, rendering: ["radial_gradient", "soft_glow"], motifs: ["tiny_firework_bursts", "tiny_uchiwa_fans"], placement: "corners" }),
+    make("maple_cream", "season", "もみじクリーム", "紅葉をフチに、紙の地", "autumn_leaves", "autumn_harvest", { style: "soft", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "burgundy", intensity: "very_light" }, rendering: ["subtle_variation", "vignette"], motifs: ["small_maple_leaves", "soft_dots"], placement: "edges" }),
+    make("moon_pale_blue", "season", "淡い月夜のお月見", "月とススキを四隅に", "moon_viewing", "", { style: "soft", backgroundType: "gradient", colors: { primary: "powder_blue", secondary: "cream", intensity: "soft" }, rendering: ["vertical_gradient", "center_glow", "gentle_blur"], motifs: ["round_moon_ornament", "silver_grass_sprigs"], placement: "corners" }),
+    make("snow_lavender", "season", "淡雪ラベンダー", "雪の結晶を四隅に少し", "winter_snow", "winter_crystal", { style: "soft", backgroundType: "gradient", colors: { primary: "lavender", secondary: "powder_blue", intensity: "very_light" }, rendering: ["vertical_gradient", "gentle_blur", "light_bloom"], motifs: ["snowflake_motifs"], placement: "corners" }),
+    // 行事・記念日
+    make("classic_christmas", "event", "クラシック・クリスマス", "ヒイラギとオーナメントを上端に", "christmas", "classic_holiday", { style: "plain", backgroundType: "texture", texture: "velvet", colors: { primary: "burgundy", secondary: "gold", intensity: "deep" }, rendering: ["vignette", "center_glow"], motifs: ["holly_sprigs", "bauble_ornaments"], placement: "upper" }),
+    make("yume_christmas", "event", "ゆめかわクリスマス", "淡いラベンダーに結晶と玉飾り", "christmas", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"], motifs: ["snowflake_motifs", "bauble_ornaments"], placement: "upper" }),
+    make("pastel_halloween", "event", "パステルハロウィン", "黒を抑えたやわらかい秋", "halloween", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "lavender", secondary: "peach", intensity: "soft" }, rendering: ["radial_gradient", "soft_glow"], motifs: ["smiling_jack_o_lantern", "tiny_bat_silhouettes"], placement: "upper" }),
+    make("dark_halloween", "event", "ダークかわいいハロウィン", "暗い地にかぼちゃと黒猫", "halloween", "dark_kawaii", { style: "purikura", backgroundType: "gradient", colors: { primary: "black", secondary: "deep_navy", intensity: "dark" }, rendering: ["vignette", "center_glow", "soft_glow"], motifs: ["smiling_jack_o_lantern", "small_black_cat_silhouettes"], placement: "corners" }),
+    make("valentine_lavender", "event", "ラベンダーのバレンタイン", "ハートとレースをフチに", "valentine", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"], motifs: ["tiny_hearts", "lace_trim"], placement: "edges" }),
+    make("white_day_candy", "event", "ホワイトデーのキャンディ", "白と水色の返礼スイーツ", "white_day", "candy_pastel", { style: "purikura", backgroundType: "gradient", colors: { primary: "white", secondary: "powder_blue", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow"], motifs: ["tiny_wrapped_candy_motifs", "tiny_marshmallow_motifs"], placement: "corners" }),
+    make("newyear_washi", "event", "和紙のお正月", "しめ縄だけを上側に", "new_year", "japanese_paper", { style: "plain", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "gold", intensity: "very_light" }, rendering: ["subtle_variation"], motifs: ["shimenawa_rope_with_shide"], placement: "upper" }),
+    make("tanabata_night", "event", "七夕の笹飾り", "笹と無地の短冊を上側に", "tanabata", "festival_night", { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "lavender", intensity: "dark" }, rendering: ["diagonal_gradient", "soft_glow"], motifs: ["bamboo_leaf_sprigs", "five_color_tanzaku_paper_strips"], placement: "upper" }),
+    make("birthday_pennant", "event", "バースデーのペナント", "細いキャンドルと三角旗", "birthday", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "cream", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "light_bloom"], motifs: ["tiny_triangular_pennant_bunting", "slim_lit_birthday_candles"], placement: "upper" }),
+    make("school_sakura", "event", "桜の入学・卒業", "桜と無地の証書を四隅に", "school_milestone", "spring_botanical", { style: "soft", backgroundType: "gradient", colors: { primary: "white", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["vertical_gradient", "gentle_blur"], motifs: ["scattered_cherry_blossom_petals", "blank_diploma_scroll"], placement: "corners" }),
+    // 海外・文化行事
+    make("easter_egg_mint", "world", "ミントのイースター", "彩色卵と小花を四隅に", "easter", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "mint", secondary: "cream", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur"], motifs: ["painted_eggs", "tiny_flowers"], placement: "corners" }),
+    make("lunar_new_year_red", "world", "春節の赤と金", "赤い提灯を上側に、文字なし", "lunar_new_year", "classic_holiday", { style: "plain", backgroundType: "gradient", colors: { primary: "burgundy", secondary: "gold", intensity: "deep" }, rendering: ["radial_gradient", "soft_glow"], motifs: ["small_red_chinese_lanterns"], placement: "upper" }),
+    make("diwali_lamps", "world", "ディワリの灯り", "ディヤとランゴリをフチに", "diwali", "festival_night", { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "peach", intensity: "dark" }, rendering: ["center_glow", "soft_glow"], motifs: ["diya_lamps", "rangoli_motifs"], placement: "edges" }),
+    make("pride_arc", "world", "淡色プライド・アーチ", "小さな虹を上側に1つ", "pride_month", "simple_elegant", { style: "soft", backgroundType: "solid", colors: { primary: "white", secondary: "", intensity: "very_light" }, rendering: ["subtle_variation"], motifs: ["small_rainbow_arc"], placement: "upper" }),
+  ];
+}
+
+/** v1からある基本のモチーフ（イベントを選ばないときに並べる） */
+export const basicMotifIds = ["tiny_hearts", "small_stars", "subtle_sparkles", "soft_dots", "tiny_flowers", "ribbons", "lace_trim", "tiny_bubbles", "little_clouds"];
 
 export function optionById(list: Option[], id: string) {
   return list.find((item) => item.id === id);
