@@ -358,7 +358,7 @@ export type LabOptions = { bgKeyword?: BgKeyword; decorForm?: DecorForm; placeWo
 export const bgKeywordOptions: { id: BgKeyword; code: string; label: string; tag: string }[] = [
   { id: "simple", code: "A", label: "現行", tag: "simple background" },
   { id: "none", code: "B", label: "キーワードなし", tag: "" },
-  { id: "decorative", code: "C", label: "装飾背景を明示", tag: "decorative background" },
+  { id: "decorative", code: "C", label: "装飾背景を明示（NovelAIで有望・未確定）", tag: "decorative background" },
   { id: "portrait", code: "D", label: "人物向けの背景を明示", tag: "portrait backdrop" },
   { id: "simple_decorative", code: "E", label: "追加候補", tag: "simple decorative backdrop" },
 ];

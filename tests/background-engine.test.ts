@@ -1120,7 +1120,7 @@ test("v2.3 advisor: one fusion notice only when separation is off, with a one-ta
 /* ------------------------------------------------------------------ */
 
 import { labVariants } from "../app/lib/generator.ts";
-import { labRecordsToCsv, parseLabRecords, summarizeLab } from "../app/lib/lab-log.ts";
+import { labRecordsToCsv, parseLabRecords, personPrompts, summarizeLab } from "../app/lib/lab-log.ts";
 
 test("v2.4. the default output is unchanged; variant A is exactly the current output", () => {
   for (const preset of seasonalPresetList) for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
@@ -1200,7 +1200,39 @@ test("v2.4 lab log: tolerant parsing, grouping and CSV", () => {
   const c = summary.find((row) => row.variant === "C")!;
   assert.equal(c.count, 2); assert.equal(c.allGood, 1); assert.equal(c.byCheck.noFusion, 1); assert.equal(c.byCheck.person, 2);
   const csv = labRecordsToCsv(records, { event: (id) => (id === "halloween" ? "ハロウィン" : "") });
-  assert.match(csv.split("\n")[0], /^日時,生成先,人物指定,方式/);
-  assert.match(csv, /NovelAI,人物指定：厚め,C,default,border,ハロウィン,12,○,×,×,×,×,×,"瞳に, ""かぼちゃ"""/);
+  assert.match(csv.split("\n")[0], /^日時,生成先,人物指定,人物指定の入力先,方式/);
+  assert.match(csv, /NovelAI,厚めの6語,その他・不明,C,default,border,ハロウィン,12,○,×,×,×,×,×,"瞳に, ""かぼちゃ"""/);
   assert.deepEqual(parseLabRecords("broken"), []);
+});
+
+/* ------------------------------------------------------------------ */
+/* v2.5：人物指定の入力先（NovelAIのキャラクタープロンプト欄）               */
+/* ------------------------------------------------------------------ */
+
+test("v2.5 lab log: the input field is recorded, grouped separately and exported; old logs read as unknown", () => {
+  const oldLog = parseLabRecords([{ id: "old", model: "novelai", person: "thin", variant: "A", checks: {} }]);
+  assert.equal(oldLog[0].personSlot, "unknown", "v2.4 の記録は「不明」として読む");
+  assert.equal(oldLog[0].person, "thin", "既存のIDの意味は変えない");
+  assert.equal(personPrompts.find((item) => item.id === "thin")!.example, "1boy");
+  assert.equal(personPrompts.find((item) => item.id === "focus")!.example, "boy, male focus, upper body, portrait");
+  assert.equal(personPrompts.find((item) => item.id === "rich")!.example, "1boy, solo, portrait, upper body, looking at viewer, casual clothes");
+  const base = { model: "novelai", person: "focus", variant: "C", eventTheme: "halloween", checks: { person: true } };
+  const records = parseLabRecords([{ ...base, id: "1", personSlot: "character" }, { ...base, id: "2", personSlot: "combined" }, { ...base, id: "3", personSlot: "character" }, { ...base, id: "4", personSlot: "nonsense" }]);
+  assert.deepEqual(records.map((item) => item.personSlot), ["character", "combined", "character", "unknown"]);
+  const summary = summarizeLab(records);
+  assert.equal(summary.length, 3, "入力先が違えば別の条件として数える");
+  assert.equal(summary.find((row) => row.personSlot === "character")!.count, 2);
+  const csv = labRecordsToCsv(records);
+  assert.match(csv, /NovelAI,具体的な4語,キャラクター欄に分けた,C/);
+  assert.match(csv, /,通常の欄にまとめた,/);
+});
+
+test("v2.5: guidance changes do not touch any generated prompt", () => {
+  // 背景用プロンプトに人物タグが入らない（キャラクター欄の例は画面の案内だけ）
+  for (const preset of seasonalPresetList) for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
+    const state = withTarget(applyPreset(preset.id), platform, model);
+    const out = generateOutput(state, style).positive;
+    assert.doesNotMatch(out, /male focus|\bboy\b|1boy|upper body|portrait(?! backdrop)/, `${preset.id} ${platform}/${model}/${style}`);
+    for (const variant of labVariants(state, style)) assert.doesNotMatch(variant.positive, /male focus|1boy|upper body/, `${preset.id} ${variant.code}`);
+  }
 });

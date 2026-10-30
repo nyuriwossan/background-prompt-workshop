@@ -6,7 +6,10 @@
  */
 
 export type LabModel = "tsubaki" | "pixai_sdxl" | "novelai" | "other";
-export type PersonPrompt = "thin" | "rich" | "other";
+/** thin・rich は v2.4 からのID（意味は変えない）。focus は v2.5 で追加 */
+export type PersonPrompt = "thin" | "focus" | "rich" | "other";
+/** v2.5 人物指定をどの欄に入れたか（背景キーワードの違いと混ぜて集計しないため） */
+export type PersonSlot = "combined" | "character" | "unknown";
 export type LabCheckId = "person" | "face" | "decor" | "noFusion" | "size" | "season";
 
 export const labModels: { id: LabModel; label: string }[] = [
@@ -15,10 +18,16 @@ export const labModels: { id: LabModel; label: string }[] = [
   { id: "novelai", label: "NovelAI" },
   { id: "other", label: "その他" },
 ];
-export const personPrompts: { id: PersonPrompt; label: string; example: string }[] = [
-  { id: "thin", label: "人物指定：少なめ", example: "1boy" },
-  { id: "rich", label: "人物指定：厚め", example: "1boy, solo, portrait, upper body, looking at viewer, casual clothes" },
-  { id: "other", label: "その他", example: "" },
+export const personPrompts: { id: PersonPrompt; label: string; short: string; example: string }[] = [
+  { id: "thin", label: "1boy のみ", short: "1boy", example: "1boy" },
+  { id: "focus", label: "具体的な4語", short: "4語", example: "boy, male focus, upper body, portrait" },
+  { id: "rich", label: "厚めの6語", short: "6語", example: "1boy, solo, portrait, upper body, looking at viewer, casual clothes" },
+  { id: "other", label: "その他", short: "他", example: "" },
+];
+export const personSlots: { id: PersonSlot; label: string; short: string }[] = [
+  { id: "combined", label: "通常の欄にまとめた", short: "まとめ" },
+  { id: "character", label: "キャラクター欄に分けた", short: "キャラ欄" },
+  { id: "unknown", label: "その他・不明", short: "不明" },
 ];
 /** 「はい」が良い結果になるように並べる */
 export const labChecks: { id: LabCheckId; label: string }[] = [
@@ -38,6 +47,8 @@ export type LabRecord = {
   createdAt: string;
   model: LabModel;
   person: PersonPrompt;
+  /** v2.5。v2.4 の記録には無いので「不明」として読む */
+  personSlot: PersonSlot;
   variant: LabVariantCode;
   decorForm: string;
   placeWording: string;
@@ -62,6 +73,7 @@ export function parseLabRecords(raw: unknown): LabRecord[] {
       createdAt: text(item.createdAt, 40) || new Date(0).toISOString(),
       model: oneOf(item.model, labModels.map((m) => m.id), "other"),
       person: oneOf(item.person, personPrompts.map((m) => m.id), "other"),
+      personSlot: oneOf(item.personSlot, personSlots.map((m) => m.id), "unknown"),
       variant: oneOf(item.variant, labVariantCodes, "A"),
       decorForm: text(item.decorForm, 40) || "default",
       placeWording: text(item.placeWording, 40) || "border",
@@ -73,14 +85,14 @@ export function parseLabRecords(raw: unknown): LabRecord[] {
   });
 }
 
-export type LabSummary = { key: string; model: LabModel; variant: LabVariantCode; person: PersonPrompt; decorForm: string; placeWording: string; eventTheme: string; count: number; allGood: number; byCheck: Record<LabCheckId, number> };
+export type LabSummary = { key: string; model: LabModel; variant: LabVariantCode; person: PersonPrompt; personSlot: PersonSlot; decorForm: string; placeWording: string; eventTheme: string; count: number; allGood: number; byCheck: Record<LabCheckId, number> };
 
-/** 同じ条件（生成先・方式・人物指定・装飾の書き方・位置の書き方・イベント）ごとに数える */
+/** 同じ条件（生成先・方式・人物指定・入力先・装飾の書き方・位置の書き方・イベント）ごとに数える */
 export function summarizeLab(records: LabRecord[]): LabSummary[] {
   const groups = new Map<string, LabSummary>();
   for (const record of records) {
-    const key = [record.model, record.variant, record.person, record.decorForm, record.placeWording, record.eventTheme].join("|");
-    const group = groups.get(key) || { key, model: record.model, variant: record.variant, person: record.person, decorForm: record.decorForm, placeWording: record.placeWording, eventTheme: record.eventTheme, count: 0, allGood: 0, byCheck: Object.fromEntries(labChecks.map((check) => [check.id, 0])) as Record<LabCheckId, number> };
+    const key = [record.model, record.variant, record.person, record.personSlot, record.decorForm, record.placeWording, record.eventTheme].join("|");
+    const group = groups.get(key) || { key, model: record.model, variant: record.variant, person: record.person, personSlot: record.personSlot, decorForm: record.decorForm, placeWording: record.placeWording, eventTheme: record.eventTheme, count: 0, allGood: 0, byCheck: Object.fromEntries(labChecks.map((check) => [check.id, 0])) as Record<LabCheckId, number> };
     group.count += 1;
     if (labChecks.every((check) => record.checks[check.id])) group.allGood += 1;
     for (const check of labChecks) if (record.checks[check.id]) group.byCheck[check.id] += 1;
@@ -93,11 +105,12 @@ const csvCell = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/
 
 /** 表計算ソフトで開けるCSV（先頭にBOMを付けるとExcelでも文字化けしない） */
 export function labRecordsToCsv(records: LabRecord[], labelOf: { event: (id: string) => string } = { event: (id) => id }): string {
-  const header = ["日時", "生成先", "人物指定", "方式", "装飾の書き方", "位置の書き方", "イベント", "seed", ...labChecks.map((check) => check.label), "メモ"];
+  const header = ["日時", "生成先", "人物指定", "人物指定の入力先", "方式", "装飾の書き方", "位置の書き方", "イベント", "seed", ...labChecks.map((check) => check.label), "メモ"];
   const rows = records.map((record) => [
     record.createdAt,
     labModels.find((m) => m.id === record.model)?.label || record.model,
     personPrompts.find((m) => m.id === record.person)?.label || record.person,
+    personSlots.find((m) => m.id === record.personSlot)?.label || record.personSlot,
     record.variant,
     record.decorForm,
     record.placeWording,

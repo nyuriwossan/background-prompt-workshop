@@ -8,8 +8,8 @@ import { basicMotifIds, createDefaultState, optionById, optionsForGroup, presetG
 import type { BackgroundMode, BackgroundState, Option, PresetGroup } from "./lib/background-data.ts";
 import { decorFormOptions, generateOutput, japaneseSummary, labVariants, negativeItemAvailability, negativeOptions, negativeSupport, placeWordingOptions } from "./lib/generator.ts";
 import type { DecorForm, PlaceWording } from "./lib/generator.ts";
-import { labChecks, labModels, labRecordsToCsv, labVariantCodes, parseLabRecords, personPrompts, summarizeLab } from "./lib/lab-log.ts";
-import type { LabCheckId, LabModel, LabRecord, LabVariantCode, PersonPrompt } from "./lib/lab-log.ts";
+import { labChecks, labModels, labRecordsToCsv, labVariantCodes, parseLabRecords, personPrompts, personSlots, summarizeLab } from "./lib/lab-log.ts";
+import type { LabCheckId, LabModel, LabRecord, LabVariantCode, PersonPrompt, PersonSlot } from "./lib/lab-log.ts";
 import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage, exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode } from "./lib/state-utils.ts";
 import type { SavedDesign } from "./lib/state-utils.ts";
 import { dynamicMotions, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "./lib/view-data.ts";
@@ -24,7 +24,9 @@ const BACKUP_KEY = "background_prompt_workshop_backup_before_v2";
 const LAB_SETTINGS_KEY = "background_prompt_workshop_lab_settings_v1";
 const LAB_LOG_KEY = "background_prompt_workshop_lab_log_v1";
 type LabSettings = { decorForm: DecorForm; placeWording: PlaceWording };
-type LabDraft = { model: LabModel; person: PersonPrompt; variant: LabVariantCode; seed: string; note: string; checks: Record<LabCheckId, boolean> };
+type LabDraft = { model: LabModel; person: PersonPrompt; personSlot: PersonSlot; variant: LabVariantCode; seed: string; note: string; checks: Record<LabCheckId, boolean> };
+/** NovelAIのキャラクタープロンプト欄に入れる人物の例（利用者の実画像比較で有望だったもの。工房の出力には入れない） */
+const CHARACTER_EXAMPLE = "boy, male focus, upper body, portrait";
 const emptyChecks = () => Object.fromEntries(labChecks.map((check) => [check.id, false])) as Record<LabCheckId, boolean>;
 
 type ChoiceItem = { id: string; label: string };
@@ -117,7 +119,7 @@ export default function Home() {
   const [showAllMotifs, setShowAllMotifs] = useState(false);
   const [labSettings, setLabSettings] = useState<LabSettings>({ decorForm: "default", placeWording: "border" });
   const [labRecords, setLabRecords] = useState<LabRecord[]>([]);
-  const [labDraft, setLabDraft] = useState<LabDraft>({ model: "novelai", person: "rich", variant: "A", seed: "", note: "", checks: emptyChecks() });
+  const [labDraft, setLabDraft] = useState<LabDraft>({ model: "novelai", person: "focus", personSlot: "character", variant: "A", seed: "", note: "", checks: emptyChecks() });
   /** リセット時に設定欄を作り直し、折りたたみ・入力中の検索語などの一時的な表示状態も初期化する */
   const [builderKey, setBuilderKey] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
@@ -354,12 +356,21 @@ export default function Home() {
     <button type="button" className="primary-button" onClick={copyPrompt}>プロンプトをコピー</button>
     <p className="target-note">{targetLabel}向け{state.outputStyle === "short" ? "・短縮版" : "・詳細版"}。{target.platform === "generic" ? "従来どおりの英文です。" : target.platform === "novelai" ? "見え方を先頭に置いたタグと短い句です。" : target.pixaiModel === "tsubaki" ? "どこから何を見ているかを1文目に書いています。" : "場所と見え方のタグを前の方に置いています。"}</p>
     {result.notes.map((note) => <p key={note} className="target-note">{note}</p>)}
-    {seasonalPerson && <details className="combine-help">
+    {seasonalPerson && (target.platform === "novelai" ? <details className="combine-help novelai-help">
+      <summary>NovelAIで人物と背景を組み合わせるコツ</summary>
+      <p>キャラクタープロンプト欄に人物の指定を、通常のプロンプト欄（ベースプロンプト）に背景工房の出力を入れてみてください。手元の比較では、人物と背景が混ざりにくくなる傾向がありました。少ない枚数での観察なので、毎回分かれるとは限りません（瞳などの細部に入り込む例もありました）。</p>
+      <div className="slot-boxes">
+        <div className="slot-box"><b>キャラクタープロンプト欄</b><small>Character Prompts の「＋」で追加（V4以降のモデル）</small><div className="slot-line"><code>{CHARACTER_EXAMPLE}</code><button type="button" onClick={() => copy(CHARACTER_EXAMPLE, "人物の例をコピーしました")}>コピー</button></div></div>
+        <div className="slot-box"><b>通常のプロンプト欄（ベースプロンプト）</b><small>背景プロンプト工房の出力</small><div className="slot-line"><span>上のプロンプト</span><button type="button" onClick={copyPrompt}>コピー</button></div></div>
+      </div>
+      <p><code>1boy</code> だけでは、人物が不安定になったり背景モチーフと融合したりした例があります。<code>{CHARACTER_EXAMPLE}</code> のように、人物の焦点と構図を少し具体的にすると改善する場合があります。</p>
+      <p className="choice-note">NovelAIの<a href="https://docs.novelai.net/en/image/multiplecharacters" target="_blank" rel="noopener noreferrer">公式ガイド</a>では、キャラクター欄には数字なしの boy・girl を使い、1boy などの人数タグはベースプロンプト側に書くとされています。人数タグを使うときは、背景プロンプトの前に足してください。人物の例は工房の出力には入りません。</p>
+    </details> : <details className="combine-help">
       <summary>人物プロンプトと組み合わせるときは</summary>
       <p>人物を描きたい場合は、人物用プロンプトで人数・構図・容姿・服装などを指定してください。人物指定が少ないと、背景モチーフが主役になったり、衣装へ混ざったりする場合があります。このプロンプトは背景専用です。</p>
-      <p className="combine-example">{target.platform === "novelai" ? <>NovelAI：人物のタグを先に書き、このプロンプトを後ろにつなげます。V4以降は、人物をキャラクタープロンプト欄、背景をベースプロンプトに分けて入れる方法もあります。<br />例：<code>1boy, solo, upper body, looking at viewer, casual clothes, </code>＋この背景</> : target.platform === "pixai" && target.pixaiModel === "tag" ? <>PIXAIタグ系：人物のタグを先に、背景のタグを後ろに並べます。<br />例：<code>1boy, solo, upper body, looking at viewer, casual clothes, </code>＋この背景</> : target.platform === "pixai" ? <>PIXAI Tsubaki系：人物を説明する文を先に書き、この背景の文を後ろに続けます。<br />例：<code>A young man in casual clothes, shown from the chest up, looking at the viewer. </code>＋この背景</> : <>人物の指定を先に書き、この背景を後ろにつなげます。</>}</p>
+      <p className="combine-example">{target.platform === "pixai" && target.pixaiModel === "tag" ? <>PIXAIタグ系：人物のタグを先に、背景のタグを後ろに並べます。<br />例：<code>1boy, solo, upper body, looking at viewer, casual clothes, </code>＋この背景</> : target.platform === "pixai" ? <>PIXAI Tsubaki系：人物を説明する文を先に書き、この背景の文を後ろに続けます。<br />例：<code>A young man in casual clothes, shown from the chest up, looking at the viewer. </code>＋この背景</> : <>人物の指定を先に書き、この背景を後ろにつなげます。</>}</p>
       <p className="choice-note">例の人物指定は、組み合わせ方を示すためのものです。工房の出力には入りません。</p>
-    </details>}
+    </details>)}
 
     {target.platform === "novelai" && state.backgroundMode === "scene" && <div className="output-option"><Toggle checked={target.novelaiEmphasis} onChange={(value) => update("target.novelaiEmphasis", value)}>見え方を少し強める（1.2::〜::）</Toggle><small>NovelAI V4以降の数値強調。見え方を細かく指定したときだけ使います。</small></div>}
     {target.platform === "pixai" && target.pixaiModel === "tsubaki" && <div className="output-option"><Toggle checked={target.tsubakiProMode} onChange={(value) => update("target.tsubakiProMode", value)}>Pro・Ultraモードで使う</Toggle><small>Lite・Standardではネガティブ欄を編集できないため、オフのときはネガティブを作りません。</small></div>}
@@ -388,6 +399,7 @@ export default function Home() {
         <strong>検証メモ（1枚ごとに記録）</strong>
         <ChoiceGroup label="生成先" options={labModels} value={labDraft.model} onChange={(id) => setLabDraft((draft) => ({ ...draft, model: id as LabModel }))} />
         <ChoiceGroup label="人物指定" options={personPrompts} value={labDraft.person} onChange={(id) => setLabDraft((draft) => ({ ...draft, person: id as PersonPrompt }))} note={personPrompts.find((item) => item.id === labDraft.person)?.example || undefined} />
+        <ChoiceGroup label="人物指定の入力先" options={personSlots} value={labDraft.personSlot} onChange={(id) => setLabDraft((draft) => ({ ...draft, personSlot: id as PersonSlot }))} note="背景キーワードの違いと混ぜて集計しないために記録します。" />
         <ChoiceGroup label="方式" options={labVariantCodes.map((code) => ({ id: code, label: code === "T" ? "T（Tsubaki・既定）" : code }))} value={labDraft.variant} onChange={(id) => setLabDraft((draft) => ({ ...draft, variant: id as LabVariantCode }))} />
         <label className="lab-input">seed<input value={labDraft.seed} onChange={(event) => setLabDraft((draft) => ({ ...draft, seed: event.target.value }))} inputMode="numeric" placeholder="例：123456" /></label>
         <ChoiceGroup label="結果（当てはまるものを選ぶ）" options={labChecks} value={labChecks.filter((check) => labDraft.checks[check.id]).map((check) => check.id)} multi onChange={(id) => setLabDraft((draft) => ({ ...draft, checks: { ...draft.checks, [id]: !draft.checks[id as LabCheckId] } }))} />
@@ -396,12 +408,12 @@ export default function Home() {
       </div>
       {labRecords.length > 0 && <div className="lab-summary">
         <strong>集計（{labRecords.length}枚）</strong>
-        <div className="lab-table-wrap"><table><thead><tr><th>生成先</th><th>方式</th><th>人物</th><th>枚数</th><th>全項目○</th><th>混ざりなし</th><th>人物あり</th></tr></thead><tbody>
-          {labSummary.map((row) => <tr key={row.key}><td>{labModels.find((item) => item.id === row.model)?.label}</td><td>{row.variant}{row.variant !== "T" && (row.decorForm !== "default" || row.placeWording !== "border") ? <small>{[row.decorForm !== "default" ? row.decorForm : "", row.placeWording === "edge" ? "borderなし" : ""].filter(Boolean).join("・")}</small> : null}{eventById(row.eventTheme) ? <small>{eventById(row.eventTheme)!.label}</small> : null}</td><td>{row.person === "thin" ? "少" : row.person === "rich" ? "厚" : "他"}</td><td>{row.count}</td><td>{row.allGood}</td><td>{row.byCheck.noFusion}</td><td>{row.byCheck.person}</td></tr>)}
+        <div className="lab-table-wrap"><table><thead><tr><th>生成先</th><th>方式</th><th>人物</th><th>入力先</th><th>枚数</th><th>全項目○</th><th>混ざりなし</th><th>人物あり</th></tr></thead><tbody>
+          {labSummary.map((row) => <tr key={row.key}><td>{labModels.find((item) => item.id === row.model)?.label}</td><td>{row.variant}{row.variant !== "T" && (row.decorForm !== "default" || row.placeWording !== "border") ? <small>{[row.decorForm !== "default" ? row.decorForm : "", row.placeWording === "edge" ? "borderなし" : ""].filter(Boolean).join("・")}</small> : null}{eventById(row.eventTheme) ? <small>{eventById(row.eventTheme)!.label}</small> : null}</td><td>{personPrompts.find((item) => item.id === row.person)?.short}</td><td>{personSlots.find((item) => item.id === row.personSlot)?.short}</td><td>{row.count}</td><td>{row.allGood}</td><td>{row.byCheck.noFusion}</td><td>{row.byCheck.person}</td></tr>)}
         </tbody></table></div>
         {labSummary.some((row) => row.count < 3) && <p className="choice-note">3枚未満の条件は、偶然の成功・失敗の可能性が高いです。seedを変えて数を増やしてください。</p>}
         <div className="lab-tools"><button type="button" onClick={exportLabCsv}>CSVで書き出す</button><button type="button" className="danger" onClick={() => { if (window.confirm("検証メモをすべて消しますか？（設計の保存一覧は消えません）")) setLabRecords([]); }}>記録を消す</button></div>
-        <ul className="lab-records">{labRecords.slice(0, 8).map((record) => <li key={record.id}><span>{labModels.find((item) => item.id === record.model)?.label}・{record.variant}・seed {record.seed || "—"}</span><span>{labChecks.filter((check) => !record.checks[check.id]).map((check) => `×${check.label}`).join("・") || "全項目○"}</span><button type="button" aria-label="この記録を削除" onClick={() => setLabRecords((records) => records.filter((item) => item.id !== record.id))}>×</button></li>)}</ul>
+        <ul className="lab-records">{labRecords.slice(0, 8).map((record) => <li key={record.id}><span>{labModels.find((item) => item.id === record.model)?.label}・{record.variant}・{personSlots.find((item) => item.id === record.personSlot)?.short}・seed {record.seed || "—"}</span><span>{labChecks.filter((check) => !record.checks[check.id]).map((check) => `×${check.label}`).join("・") || "全項目○"}</span><button type="button" aria-label="この記録を削除" onClick={() => setLabRecords((records) => records.filter((item) => item.id !== record.id))}>×</button></li>)}</ul>
       </div>}
     </details>}
 

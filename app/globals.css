@@ -289,6 +289,16 @@ button:focus-visible, summary:focus-visible, input:focus-visible, label.toggle:f
 .combine-help[open] > summary::before, .lab-panel[open] > summary::before { content: "－ "; }
 .combine-help > p, .lab-panel > p { margin: 0 12px 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .combine-example code, .variant-head code { display: inline; padding: 1px 4px; border-radius: 4px; background: #0b100e; color: var(--text); font-size: 11px; word-break: break-word; }
+.novelai-help a { color: var(--accent); }
+.slot-boxes { display: grid; gap: 8px; margin: 0 12px 10px; }
+.slot-box { padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #0d1311; }
+.slot-box b { display: block; font-size: 12px; }
+.slot-box small { display: block; color: var(--faint); font-size: 10.5px; }
+.slot-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 6px; }
+.slot-line code { padding: 4px 6px; border-radius: 5px; background: #0b100e; color: var(--text); font-size: 12px; word-break: break-word; }
+.slot-line span { color: var(--muted); font-size: 12px; }
+.slot-line button { min-height: 32px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); font-size: 12px; cursor: pointer; }
+.combine-help p code { padding: 1px 4px; border-radius: 4px; background: #0b100e; color: var(--text); font-size: 11px; }
 .lab-panel > summary span { margin-right: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(240,189,103,.14); color: var(--warning); font-size: 10px; }
 .lab-panel > .choice-group, .lab-panel > .target-note { margin-left: 12px; margin-right: 12px; }
 .variant-list { list-style: none; margin: 0 12px 12px; padding: 0; display: grid; gap: 8px; }
