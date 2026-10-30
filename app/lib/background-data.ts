@@ -75,6 +75,8 @@ export type BackgroundState = {
     eventTheme: string;
     /** v2.2：デザインのテイスト（designProfiles）。空なら選ばない。既存の項目で表せない見た目だけを出力に足す */
     designProfile: string;
+    /** v2.3：人物と装飾を分ける（人物と混ざりやすい季節モチーフを、背景の小さな平面装飾として書く）。人物がいて、該当モチーフがあるときだけ効く */
+    decorSeparation: boolean;
   };
   ui: { warningsDismissed: string[]; expandedSections: string[] };
 };
@@ -470,7 +472,7 @@ export const createDefaultState = (): BackgroundState => ({
     colors: { primary: "pastel_pink", secondary: "lavender", intensity: "soft" },
     rendering: ["diagonal_gradient", "center_glow", "gentle_blur"], pattern: "", texture: "",
     decoration: { enabled: true, motifs: ["subtle_sparkles"], placement: "", density: "" },
-    eventTheme: "", designProfile: "",
+    eventTheme: "", designProfile: "", decorSeparation: true,
   },
   ui: { warningsDismissed: [], expandedSections: ["purpose", "stage"] },
 });
@@ -1313,13 +1315,14 @@ function seasonalPresets(): BackgroundPreset[] {
     // 行事・記念日
     make("classic_christmas", "event", "クラシック・クリスマス", "ヒイラギとオーナメントを上端に", "christmas", "classic_holiday", { style: "plain", backgroundType: "texture", texture: "velvet", colors: { primary: "burgundy", secondary: "gold", intensity: "deep" }, rendering: ["vignette", "center_glow"], motifs: ["holly_sprigs", "bauble_ornaments"], placement: "upper" }),
     make("yume_christmas", "event", "ゆめかわクリスマス", "淡いラベンダーに結晶と玉飾り", "christmas", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"], motifs: ["snowflake_motifs", "bauble_ornaments"], placement: "upper" }),
-    make("pastel_halloween", "event", "パステルハロウィン", "黒を抑えたやわらかい秋", "halloween", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "lavender", secondary: "peach", intensity: "soft" }, rendering: ["radial_gradient", "soft_glow"], motifs: ["smiling_jack_o_lantern", "tiny_bat_silhouettes"], placement: "upper" }),
+    make("pastel_halloween", "event", "パステルハロウィン", "かぼちゃとコウモリを四隅に", "halloween", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "lavender", secondary: "peach", intensity: "soft" }, rendering: ["radial_gradient", "soft_glow"], motifs: ["smiling_jack_o_lantern", "tiny_bat_silhouettes"], placement: "corners" }),
     make("dark_halloween", "event", "ダークかわいいハロウィン", "暗い地にかぼちゃと黒猫", "halloween", "dark_kawaii", { style: "purikura", backgroundType: "gradient", colors: { primary: "black", secondary: "deep_navy", intensity: "dark" }, rendering: ["vignette", "center_glow", "soft_glow"], motifs: ["smiling_jack_o_lantern", "small_black_cat_silhouettes"], placement: "corners" }),
     make("valentine_lavender", "event", "ラベンダーのバレンタイン", "ハートとレースをフチに", "valentine", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"], motifs: ["tiny_hearts", "lace_trim"], placement: "edges" }),
     make("white_day_candy", "event", "ホワイトデーのキャンディ", "白と水色の返礼スイーツ", "white_day", "candy_pastel", { style: "purikura", backgroundType: "gradient", colors: { primary: "white", secondary: "powder_blue", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow"], motifs: ["tiny_wrapped_candy_motifs", "tiny_marshmallow_motifs"], placement: "corners" }),
     make("newyear_washi", "event", "和紙のお正月", "しめ縄だけを上側に", "new_year", "japanese_paper", { style: "plain", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "gold", intensity: "very_light" }, rendering: ["subtle_variation"], motifs: ["shimenawa_rope_with_shide"], placement: "upper" }),
     make("tanabata_night", "event", "七夕の笹飾り", "笹と無地の短冊を上側に", "tanabata", "festival_night", { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "lavender", intensity: "dark" }, rendering: ["diagonal_gradient", "soft_glow"], motifs: ["bamboo_leaf_sprigs", "five_color_tanzaku_paper_strips"], placement: "upper" }),
-    make("birthday_pennant", "event", "バースデーのペナント", "細いキャンドルと三角旗", "birthday", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "cream", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "light_bloom"], motifs: ["tiny_triangular_pennant_bunting", "slim_lit_birthday_candles"], placement: "upper" }),
+    make("birthday_pennant", "event", "バースデーのペナント", "三角旗と紙吹雪を上側に", "birthday", "pastel_pop", { style: "purikura", backgroundType: "gradient", colors: { primary: "cream", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "light_bloom"], motifs: ["tiny_triangular_pennant_bunting", "tiny_paper_confetti_pieces"], placement: "upper" }),
+    make("birthday_candles", "event", "四隅のバースデーキャンドル", "平面のキャンドルを四隅に", "birthday", "celebration_clean", { style: "plain", backgroundType: "studio", colors: { primary: "white", secondary: "peach", intensity: "very_light" }, rendering: ["flat", "center_glow"], motifs: ["slim_lit_birthday_candles", "subtle_sparkles"], placement: "corners" }),
     make("school_sakura", "event", "桜の入学・卒業", "桜と無地の証書を四隅に", "school_milestone", "spring_botanical", { style: "soft", backgroundType: "gradient", colors: { primary: "white", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["vertical_gradient", "gentle_blur"], motifs: ["scattered_cherry_blossom_petals", "blank_diploma_scroll"], placement: "corners" }),
     // 海外・文化行事
     make("easter_egg_mint", "world", "ミントのイースター", "彩色卵と小花を四隅に", "easter", "yume_kawaii", { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "mint", secondary: "cream", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur"], motifs: ["painted_eggs", "tiny_flowers"], placement: "corners" }),

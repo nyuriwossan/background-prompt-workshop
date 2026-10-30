@@ -70,6 +70,7 @@ export function clearActiveMode(state: BackgroundState, confirmed = true): Backg
       decoration: { enabled: false, motifs: [], placement: "", density: "" },
       eventTheme: "",
       designProfile: "",
+      decorSeparation: true,
     },
   };
 }
@@ -230,6 +231,8 @@ export function migrateState(raw: unknown): BackgroundState {
       // v2.2 で追加。v2.1 以前のデータには無いので「選ばない」で補う（出力は従来と同じ）
       eventTheme: pickOptional(simple.eventTheme, eventThemes),
       designProfile: pickOptional(simple.designProfile, designProfiles),
+      // v2.3 で追加。無いデータでは「分ける」を既定にする（効くのは人物と混ざりやすい季節モチーフを選んだときだけ）
+      decorSeparation: bool(simple.decorSeparation, d.simple.decorSeparation),
     },
     ui: {
       warningsDismissed: Array.isArray(ui.warningsDismissed) ? ui.warningsDismissed.filter((item): item is string => typeof item === "string") : [],

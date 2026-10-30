@@ -11,7 +11,7 @@ import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage,
 import type { SavedDesign } from "./lib/state-utils.ts";
 import { dynamicMotions, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "./lib/view-data.ts";
 import { getViewAvailability, stageProfile, viewSummary } from "./lib/view-rules.ts";
-import { designProfiles, eventById, eventGroups, eventMotifIds, eventThemes, motifFamilies, profileById, seasonalMotifById, seasonalMotifs } from "./lib/seasonal-data.ts";
+import { designProfiles, eventById, eventGroups, eventMotifIds, eventThemes, fusionKindLabels, motifFamilies, profileById, seasonalMotifById, seasonalMotifs } from "./lib/seasonal-data.ts";
 
 // 保存キーは v1 から変えない（既存の保存を見失わないため）。中身は読み込み時に v2 へ移行する
 const DRAFT_KEY = "background_prompt_workshop_draft_v1";
@@ -289,6 +289,7 @@ export default function Home() {
   ].map((group) => ({ ...group, options: group.ids.filter((id) => !shownMotifIds.includes(id)).map(motifOption).filter((item): item is Option => Boolean(item)) })).filter((group) => group.options.length);
   const hiddenMotifCount = moreMotifGroups.reduce((sum, group) => sum + group.options.length, 0);
   const motifNotes = simple.decoration.enabled ? simple.decoration.motifs.map(seasonalMotifById).filter((item) => item?.note).map((item) => ({ id: item!.id, text: `${item!.label}：${item!.note}` })) : [];
+  const fusionMotifs = simple.decoration.enabled && simple.subjectRelation !== "background_only" ? simple.decoration.motifs.map(seasonalMotifById).filter((item) => item && item.fusion.level !== "low") : [];
   const orderedProfiles = activeEvent ? [...activeEvent.profiles.map((id) => profileById(id)!).filter(Boolean), ...designProfiles.filter((item) => !activeEvent.profiles.includes(item.id))] : designProfiles;
   const eventSummary = activeEvent ? `${activeEvent.label}（${activeEvent.period}）` : "選ばない（ふだんのシンプル背景）";
 
@@ -485,6 +486,10 @@ export default function Home() {
               {simple.decoration.enabled ? <>
                 {simple.subjectRelation !== "background_only" && <p className="choice-note">人物を目立たせたいなら、モチーフは1〜2種類・端か上側・まばらがおすすめです。</p>}
                 <ChoiceGroup label={activeEvent ? `モチーフ（「${activeEvent.label}」のおすすめ）` : "モチーフ"} options={shownMotifs} value={simple.decoration.motifs} multi max={3} onChange={(id) => toggle("simple.decoration.motifs", id, 3)} />
+                {fusionMotifs.length > 0 && <div className="separation-option">
+                  <Toggle checked={simple.decorSeparation} onChange={(value) => update("simple.decorSeparation", value)}>人物と装飾を分ける</Toggle>
+                  <small>人物と混ざりやすいモチーフ：{fusionMotifs.map((item) => `${item!.label}（${item!.fusion.kinds.map((kind) => fusionKindLabels[kind]).join("・")}）`).join("、")}。オンにすると、背景のフチに描いた小さな平面装飾として書きます。</small>
+                </div>}
                 {motifNotes.length > 0 && <ul className="motif-notes">{motifNotes.map((note) => <li key={note.id}>{note.text}</li>)}</ul>}
                 {hiddenMotifCount > 0 && <button type="button" className="text-button motif-more" aria-expanded={showAllMotifs} onClick={() => setShowAllMotifs((value) => !value)}>{showAllMotifs ? "おすすめだけにする" : `ほかのモチーフも見る（${hiddenMotifCount}件）`}</button>}
                 {showAllMotifs && <div className="motif-more-groups">{moreMotifGroups.map((group) => <ChoiceGroup key={group.id} label={group.label} options={group.options} value={simple.decoration.motifs} multi onChange={(id) => toggle("simple.decoration.motifs", id, 3)} />)}</div>}

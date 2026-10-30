@@ -9,7 +9,7 @@ import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage,
 import { createDefaultView, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "../app/lib/view-data.ts";
 import { getViewAvailability, viewSummary } from "../app/lib/view-rules.ts";
 import { basicMotifIds } from "../app/lib/background-data.ts";
-import { designProfiles, eventThemes, proposalIdAliases, seasonalMotifs } from "../app/lib/seasonal-data.ts";
+import { designProfiles, eventThemes, fusionKindLabels, proposalIdAliases, seasonalMotifs } from "../app/lib/seasonal-data.ts";
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
 const applyPreset = (id: string): BackgroundState => {
@@ -64,7 +64,7 @@ test("creatures are separated from traces", () => {
 test("presets: unique IDs, valid groups, and expected counts", () => {
   assert.equal(new Set(presets.map((preset) => preset.id)).size, presets.length);
   assert.equal(presets.filter((preset) => preset.mode === "scene").length, 53);
-  assert.equal(presets.filter((preset) => preset.mode === "simple").length, 36);
+  assert.equal(presets.filter((preset) => preset.mode === "simple").length, 37);
   for (const preset of presets) assert.ok(presetGroups[preset.mode].some((group) => group.id === preset.group), `${preset.id}: ${preset.group}`);
   for (const mode of ["scene", "simple"] as const) for (const group of presetGroups[mode]) assert.ok(presets.some((preset) => preset.mode === mode && preset.group === group.id), `empty preset group ${mode}/${group.id}`);
   assert.equal(presetGroups.scene[0].id, "recommended");
@@ -622,7 +622,7 @@ test("clear: simple mode removes texture, pattern, blur and decoration but keeps
   state.simple.rendering = ["gentle_blur", "soft_glow", "vignette"];
   state.simple.colors.intensity = "deep";
   const cleared = clearActiveMode(state);
-  assert.deepEqual(cleared.simple, { subjectRelation: "character_focus", style: "purikura", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "", intensity: "medium" }, rendering: [], pattern: "", texture: "", decoration: { enabled: false, motifs: [], placement: "", density: "" }, eventTheme: "", designProfile: "" });
+  assert.deepEqual(cleared.simple, { subjectRelation: "character_focus", style: "purikura", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "", intensity: "medium" }, rendering: [], pattern: "", texture: "", decoration: { enabled: false, motifs: [], placement: "", density: "" }, eventTheme: "", designProfile: "", decorSeparation: true });
   assert.deepEqual(cleared.scene, state.scene);
   const pattern = clearActiveMode(applyPreset("seigaiha_navy"));
   assert.equal(pattern.simple.backgroundType, "solid");
@@ -825,9 +825,12 @@ test("v2.2-4. every event has a preset-free path that produces a clean prompt on
       const out = generateOutput(withTarget(state, platform, model), style).positive;
       assert.ok(out.length > 30, `${event.id} ${platform}/${model}/${style}`);
       assert.doesNotMatch(out, /undefined|null|\{|\}|,\s*,|\s{2,}/, `${event.id} ${platform}/${model}/${style}: ${out}`);
+      const separated = event.starter.some((id) => (seasonalMotifs.find((item) => item.id === id)?.fusion.level || "low") !== "low");
       for (const id of event.starter) {
         const option = simpleData.motifs.find((item) => item.id === id)!;
-        const expected = platform === "generic" || model === "tsubaki" && platform === "pixai" ? option.en : (option.tag || option.en);
+        const seasonalMotif = seasonalMotifs.find((item) => item.id === id);
+        const natural = platform === "generic" || model === "tsubaki" && platform === "pixai";
+        const expected = natural ? (separated && seasonalMotif?.sepEn) || option.en : (separated && seasonalMotif?.sepTag) || option.tag || option.en;
         assert.ok(out.includes(expected.split(",")[0]), `${event.id}: ${id} が出力に入る ${out}`);
       }
     }
@@ -879,11 +882,11 @@ test("v2.2-7. decoration off removes every event motif from every output", () =>
   for (const preset of seasonalPresetList) {
     const state = applyPreset(preset.id);
     state.simple.decoration.enabled = false;
-    const words = state.simple.decoration.motifs.flatMap((id) => { const item = simpleData.motifs.find((option) => option.id === id)!; return [item.en, ...(item.tag || "").split(", ")]; }).filter(Boolean);
+    const words = state.simple.decoration.motifs.flatMap((id) => { const item = simpleData.motifs.find((option) => option.id === id)!; const extra = seasonalMotifs.find((option) => option.id === id); return [item.en, ...(item.tag || "").split(", "), extra?.sepEn || "", extra?.sepTag || ""]; }).filter(Boolean);
     for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
       const out = generateOutput(withTarget(state, platform, model), style).positive;
       for (const word of words) assert.ok(!out.includes(word), `${preset.id} ${platform}/${model}/${style}: ${word} in ${out}`);
-      assert.doesNotMatch(out, /leaving the center open|sparse decorations|sticker/, `${preset.id}: ${out}`);
+      assert.doesNotMatch(out, /leaving the center open|open central space|apart from the character|sparse decorations|sticker|illustration/, `${preset.id}: ${out}`);
     }
   }
 });
@@ -924,14 +927,14 @@ test("v2.2: the event does not fix the look — the same event can take differen
   assert.doesNotMatch(generatePrompt(sticker), /sticker/);
   sticker.simple.decoration.enabled = true;
   assert.match(generatePrompt(sticker), /sticker-like cutouts/);
-  assert.match(pixaiTag(sticker), /sticker, white outline/);
+  assert.match(pixaiTag(sticker), /sticker-style decorations/);
 });
 
 test("v2.2: tag outputs show placement and density for seasonal motifs, even in the short version", () => {
   const state = applyPreset("newyear_washi");
   for (const out of [pixaiTag(state, "short"), novelai(state, "short")]) {
     assert.match(out, /shimenawa, shide/);
-    assert.match(out, /concentrated toward the top, sparse decorations/);
+    assert.match(out, /decorations along the top border, sparse decorations/);
   }
   assert.ok(generateOutput(withTarget(state, "pixai", "tag"), "short").notes.length === 1);
   assert.match(tsubaki(state), /decorated with sparse shimenawa rope trim .* concentrated toward the top, leaving the center open\./);
@@ -969,4 +972,145 @@ test("v2.2: clearing and resetting the simple mode also clears the event and tas
   assert.equal(cleared.simple.eventTheme, ""); assert.equal(cleared.simple.designProfile, "");
   assert.doesNotMatch(generatePrompt(cleared), /jack|center open|pastel accents/);
   assert.deepEqual(resetActiveMode(state).simple, createDefaultState().simple);
+});
+
+
+/* ------------------------------------------------------------------ */
+/* v2.3：季節装飾と人物の融合防止                                         */
+/* ------------------------------------------------------------------ */
+
+const allOutputs = (state: BackgroundState) => ALL_TARGETS.flatMap(([platform, model]) => (["short", "detailed"] as const).map((style) => ({ key: `${platform}/${model}/${style}`, platform, model, style, out: generateOutput(withTarget(state, platform, model), style).positive })));
+const halloween = () => applyPreset("pastel_halloween");
+
+test("v2.3-1. high-risk motifs get the separation phrasing for a character background", () => {
+  for (const { key, platform, model, out } of allOutputs(halloween())) {
+    if (platform === "generic" || model === "tsubaki" && platform === "pixai") {
+      assert.match(out, /small flat cartoon jack-o'-lantern stickers/, key);
+      assert.match(out, /in the corners of the background, kept sparse, leaving an open central space for the character/, key);
+    } else {
+      assert.match(out, /jack-o'-lantern stickers, bat silhouette stickers, decorations in the corners, sparse decorations/, key);
+      assert.doesNotMatch(out, /jack-o'-lantern,|jack-o'-lantern$/, `${key}: かぼちゃを単独のタグで出さない`);
+    }
+    if (platform === "pixai" && model === "tsubaki") assert.match(out, /The decorations stay flat on the background, apart from the character\./, key);
+  }
+  // 人物の容姿・人数・品質タグは足さない。否定語をポジティブに並べない
+  for (const { key, out } of allOutputs(halloween())) assert.doesNotMatch(out, /\b(1boy|1girl|solo|face|hair|outfit|costume|pose|masterpiece|quality)\b|\bno \w+/i, key);
+});
+
+test("v2.3-2. background-only never adds character-protection wording", () => {
+  for (const id of ["pastel_halloween", "birthday_candles", "tanabata_night", "moon_pale_blue"]) {
+    const state = applyPreset(id); state.simple.subjectRelation = "background_only";
+    for (const { key, out } of allOutputs(state)) {
+      assert.doesNotMatch(out, /for the character|apart from the character|open central space|center open/, `${id} ${key}: ${out}`);
+      assert.doesNotMatch(out, /stickers|flat .* illustrations?/, `${id} ${key}: 背景単体ではふだんの描写に戻す`);
+    }
+  }
+});
+
+test("v2.3-3. no-event backgrounds and the scene mode are untouched", () => {
+  // v2.1 のスナップショット（v2.2-6）に加え、季節モチーフを選ばない限り「分ける」は効かない
+  const plain = { ...applyPreset("lace_ribbon_pink"), backgroundMode: "simple" as const };
+  const off = structuredClone(plain); off.simple.decorSeparation = false;
+  for (const [platform, model] of ALL_TARGETS) assert.equal(generateOutput(withTarget(plain, platform, model)).positive, generateOutput(withTarget(off, platform, model)).positive);
+  // 空間背景には人物分離の補正を入れない
+  const scene = createDefaultState();
+  scene.simple = applyPreset("pastel_halloween").simple;
+  for (const [platform, model] of ALL_TARGETS) assert.doesNotMatch(generateOutput(withTarget(scene, platform, model)).positive, /sticker|apart from the character|jack/, platform);
+});
+
+test("v2.3-4. each target gets its own form", () => {
+  const state = applyPreset("birthday_candles");
+  const tsu = tsubaki(state);
+  assert.match(tsu, /^A very pale white and peach clean studio background\. /);
+  assert.match(tsu, /It is decorated with tiny flat candle illustrations and subtle sparkles in the corners of the background, kept sparse, leaving an open central space for the character\./);
+  const tag = pixaiTag(state); const nai = novelai(state);
+  for (const out of [tag, nai]) {
+    assert.match(out, /candle illustrations, subtle sparkles, decorations in the corners, sparse decorations/);
+    assert.doesNotMatch(out, /(^|, )candles(,|$)/, "キャンドルを単独のタグで出さない");
+    assert.doesNotMatch(out, /\./, "タグ系は文にしない");
+  }
+  assert.match(generatePrompt(state, "detailed"), /\. The decorations stay flat on the background, apart from the character\.$/);
+  // 分けるをオフにすると、v2.2 と同じ描き方（実物のモチーフ）に戻る
+  state.simple.decorSeparation = false;
+  assert.match(tsubaki(state), /sparse slim lit birthday candles and subtle sparkles gathered in the corners, leaving the center open\./);
+  assert.doesNotMatch(tsubaki(state), /flat|apart from/);
+});
+
+test("v2.3-5/6. fusion metadata is complete and only references known risk kinds", () => {
+  const kinds = new Set(Object.keys(fusionKindLabels));
+  for (const motif of seasonalMotifs) {
+    assert.ok(["low", "medium", "high"].includes(motif.fusion.level), motif.id);
+    assert.ok(["flat", "print", "frame", "object", "phenomenon"].includes(motif.form), motif.id);
+    for (const kind of motif.fusion.kinds) assert.ok(kinds.has(kind), `${motif.id}: ${kind}`);
+    if (motif.fusion.level === "low") assert.deepEqual(motif.fusion.kinds, [], motif.id);
+    else {
+      assert.ok(motif.fusion.kinds.length > 0, motif.id);
+      assert.ok(motif.sepEn && motif.sepTag, `${motif.id}: 分けるときの表現が要る`);
+      assert.match(motif.sepEn!, /\bflat\b|hanging/, motif.id);
+      assert.match(motif.sepTag!, /stickers?|illustrations?|decorations/, motif.id);
+    }
+    if (motif.fusion.observed) assert.match(motif.fusion.observed.date, /^\d{4}-\d{2}-\d{2}$/);
+  }
+  // 依頼で確認を求められたモチーフは、すべて medium 以上
+  for (const id of ["smiling_jack_o_lantern", "slim_lit_birthday_candles", "five_color_tanzaku_paper_strips", "tiny_uchiwa_fans", "small_black_cat_silhouettes", "tiny_paper_lanterns", "small_red_chinese_knot_ornaments", "bauble_ornaments", "painted_eggs", "round_moon_ornament"]) {
+    assert.notEqual(seasonalMotifs.find((item) => item.id === id)!.fusion.level, "low", id);
+  }
+  // 実画像で確かめたもの（2026-10-30 NovelAI）と推測だけのものを分けている
+  assert.deepEqual(seasonalMotifs.filter((item) => item.fusion.observed).map((item) => item.id).sort(), ["bamboo_leaf_sprigs", "five_color_tanzaku_paper_strips", "round_moon_ornament", "slim_lit_birthday_candles", "smiling_jack_o_lantern"].sort());
+});
+
+test("v2.3: tag outputs never emit standalone words that also describe the character", () => {
+  const forbidden = new Set(["silhouette", "white outline", "gold trim", "colorful", "retro style", "holographic", "sticker", "dreamy", "pastel colors", "concentrated toward the top", "gathered in the corners", "arranged along the edges"]);
+  const states: BackgroundState[] = [...seasonalPresetList.map((preset) => applyPreset(preset.id))];
+  for (const motif of seasonalMotifs) for (const separate of [true, false]) {
+    const state = simpleState();
+    Object.assign(state.simple, { eventTheme: "", decorSeparation: separate, decoration: { enabled: true, motifs: [motif.id], placement: motif.prefer[0], density: "sparse" } });
+    states.push(state);
+  }
+  for (const profile of designProfiles) { const state = applyPreset("sakura_milk"); state.simple.designProfile = profile.id; states.push(state); }
+  for (const state of states) for (const out of [pixaiTag(state, "short"), pixaiTag(state, "detailed"), novelai(state, "short"), novelai(state, "detailed")]) {
+    for (const tag of out.split(", ")) assert.ok(!forbidden.has(tag), `${tag} in ${out}`);
+  }
+});
+
+test("v2.3-7. decoration off removes motifs and the separation wording", () => {
+  const state = applyPreset("dark_halloween"); state.simple.decoration.enabled = false;
+  for (const { key, out } of allOutputs(state)) assert.doesNotMatch(out, /jack|cat|sticker|apart from|open central/, key);
+});
+
+test("v2.3-8. saved data without the separation flag loads with separation on", () => {
+  const v22 = applyPreset("tanabata_night") as unknown as { simple: Record<string, unknown> };
+  delete v22.simple.decorSeparation;
+  const loaded = migrateState(v22);
+  assert.equal(loaded.simple.decorSeparation, true);
+  assert.deepEqual(loaded.simple, applyPreset("tanabata_night").simple);
+  assert.equal(migrateState({ version: 2, simple: { decorSeparation: "yes" } }).simple.decorSeparation, true);
+  const off = applyPreset("tanabata_night"); off.simple.decorSeparation = false;
+  const round = parseImportedJson(JSON.parse(JSON.stringify(exportDesign(off))));
+  assert.ok(round.kind === "design" && round.state.simple.decorSeparation === false);
+  // v1 の保存データも引き続き読める
+  assert.equal(parseImportedJson(fixture("v1-saved-data.json").design).kind, "design");
+});
+
+test("v2.3 advisor: one fusion notice only when separation is off, with a one-tap fix", () => {
+  const on = halloween();
+  assert.ok(!getAdvice(on).some((item) => item.id === "motif-fusion"));
+  const off = halloween(); off.simple.decorSeparation = false;
+  const fusion = getAdvice(off).filter((item) => item.id === "motif-fusion");
+  assert.equal(fusion.length, 1);
+  assert.equal(fusion[0].kind, "warning");
+  assert.match(fusion[0].body, /かぼちゃが人物の顔や頭部として描かれることがあります。.*実画像で起きた例があります/);
+  assert.deepEqual(fusion[0].patch, { path: "simple.decorSeparation", value: true });
+  const tanzaku = applyPreset("tanabata_night"); tanzaku.simple.decorSeparation = false;
+  assert.match(getAdvice(tanzaku).find((item) => item.id === "motif-fusion")!.body, /短冊が人物の手元に出ることがあります/);
+  const candle = applyPreset("birthday_candles"); candle.simple.decorSeparation = false;
+  assert.match(getAdvice(candle).find((item) => item.id === "motif-fusion")!.body, /キャンドルが人物の持ち物や頭部の装飾/);
+  // 背景のみ・低リスクだけのときは出さない
+  off.simple.subjectRelation = "background_only";
+  assert.ok(!getAdvice(off).some((item) => item.id === "motif-fusion"));
+  const petals = applyPreset("sakura_milk"); petals.simple.decorSeparation = false;
+  assert.ok(!getAdvice(petals).some((item) => item.id === "motif-fusion"));
+  // かぼちゃ・キャンドルを上側に置くと、四隅を勧める（頭の高さを避ける）
+  const upper = halloween(); upper.simple.decoration.placement = "upper";
+  assert.equal(getAdvice(upper).find((item) => item.id === "motif-placement")?.patch?.value, "corners");
 });

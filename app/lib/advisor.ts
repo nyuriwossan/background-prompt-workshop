@@ -1,5 +1,5 @@
 import { sceneData, simpleData } from "./background-data.ts";
-import { eventById, seasonalMotifById } from "./seasonal-data.ts";
+import { eventById, fusionKindLabels, seasonalMotifById } from "./seasonal-data.ts";
 import { negativeSupport } from "./generator.ts";
 import type { BackgroundState } from "./background-data.ts";
 import { stageProfile } from "./view-rules.ts";
@@ -72,6 +72,17 @@ function seasonalAdvice(state: BackgroundState): Advice[] {
   const seasonal = chosen.map(seasonalMotifById).filter((item) => item !== undefined);
   const event = eventById(s.eventTheme);
   if (!seasonal.length && !event) return [];
+  const person = s.subjectRelation !== "background_only";
+
+  // 0. v2.3 人物と混ざりやすいモチーフ（「人物と装飾を分ける」がオフのときだけ。いちばん強いもの1件に絞る）
+  if (person && s.decorSeparation === false) {
+    const risky = seasonal.filter((motif) => motif.fusion.level !== "low").sort((a, b) => (a.fusion.level === "high" ? -1 : 0) - (b.fusion.level === "high" ? -1 : 0));
+    const top = risky[0];
+    if (top) {
+      const body = top.advice || `「${top.label}」が人物の${top.fusion.kinds.map((kind) => fusionKindLabels[kind]).join("・")}として描かれることがあります。背景の小さな平面装飾として書くと、分かれやすくなる可能性があります。`;
+      result.push({ id: "motif-fusion", kind: top.fusion.level === "high" ? "warning" : "suggestion", title: `「${top.label}」が人物に混ざるかも`, body: `${body}${top.fusion.observed ? "（実画像で起きた例があります）" : ""}`, actionLabel: "人物と装飾を分ける", patch: { path: "simple.decorSeparation", value: true } });
+    }
+  }
 
   // 1. 見分けにくい・文化が混ざる組み合わせ（後から選んだほうを外す提案）
   for (const motif of seasonal) {
@@ -93,7 +104,6 @@ function seasonalAdvice(state: BackgroundState): Advice[] {
   }
 
   // 2. 人物がいるときは、季節の装飾を端・四隅・上側に寄せる（中央・顔まわりを空ける）
-  const person = s.subjectRelation !== "background_only";
   const prefer = seasonal[0]?.prefer[0] || event?.placement || "edges";
   if (person && (s.decoration.placement === "" || s.decoration.placement === "scattered")) {
     result.push({ id: "seasonal-edge", kind: "suggestion", title: "顔や衣装に重ならないように", body: "人物を目立たせたいなら、季節のモチーフは1〜2種類・端か上側・まばらがおすすめです。", actionLabel: PLACE_ACTION[prefer], patch: { path: "simple.decoration.placement", value: prefer } });

@@ -20,13 +20,48 @@ export type Placement = "scattered" | "edges" | "corners" | "upper";
 
 export type MotifFamily = "spring" | "summer" | "autumn" | "winter" | "celebration" | "world";
 
+/**
+ * v2.3 人物への混入・融合リスク（仮説として登録。実画像で確かめたものだけ observed を付ける）
+ * - head_body : 人物の頭・顔・体の造形になる（かぼちゃ頭、キャンドル頭）
+ * - costume   : 髪飾り・アクセサリー・衣装の柄になる
+ * - held_item : 人物の持ち物として手元に描かれる
+ * - creature  : ペット・別の生き物・別人物として大きく描かれる
+ * - oversize  : 小さな装飾のはずが、人物の後ろを占める大きな物体になる
+ */
+export type FusionKind = "head_body" | "costume" | "held_item" | "creature" | "oversize";
+export type FusionLevel = "low" | "medium" | "high";
+export type FusionRisk = {
+  level: FusionLevel;
+  kinds: FusionKind[];
+  /** 実画像で確認できた事象（日付・生成先・内容）。無ければ推測上のリスク */
+  observed?: { date: string; target: string; note: string };
+};
+
+/**
+ * 装飾の表現形式
+ * - flat       : 平面的なイラスト・ステッカー
+ * - print      : 背景に印刷された模様
+ * - frame      : フレーム・縁の装飾
+ * - object     : 背景空間にある実物
+ * - phenomenon : 舞う・降る自然現象（花びら・雪など）
+ */
+export type MotifForm = "flat" | "print" | "frame" | "object" | "phenomenon";
+
+export const fusionKindLabels: Record<FusionKind, string> = {
+  head_body: "頭や顔",
+  costume: "髪飾り・衣装",
+  held_item: "持ち物",
+  creature: "別の生き物",
+  oversize: "大きな背景物",
+};
+
 export type SeasonalMotif = {
   /** 保存データにも残る安定ID（変更しない） */
   id: string;
   label: string;
   /** 自然文向け。密度の語（sparse など）を前に付けても読めるよう、冠詞なしの複数形にする */
   en: string;
-  /** タグ系向けの短い句。丸かっこはPIXAI（SD系）で強調として読まれるため使わない */
+  /** タグ系向けの短い句。丸かっこはPIXAI（SD系）で強調として読まれるため使わない。人物にも当てはまる単独語（silhouette など）を作らない */
   tag: string;
   kw?: string;
   family: MotifFamily;
@@ -40,6 +75,16 @@ export type SeasonalMotif = {
   culture?: "japan" | "china" | "india";
   /** 画面に出す短い注意 */
   note?: string;
+  /** v2.3 ふだんの表現形式 */
+  form: MotifForm;
+  /** v2.3 人物への混入・融合リスク */
+  fusion: FusionRisk;
+  /** v2.3「人物と装飾を分ける」ときの自然文。背景に描かれた小さな平面装飾として書く（medium・high は必須） */
+  sepEn?: string;
+  /** 同じくタグ系。装飾であることが同じ句の中で伝わるようにする */
+  sepTag?: string;
+  /** 画面のアドバイスで使う一文（無ければ種類から組み立てる） */
+  advice?: string;
   validation: "unverified" | "tested";
 };
 
@@ -86,7 +131,10 @@ export type DesignProfile = {
   decorationOnly?: boolean;
 };
 
-const m = (id: string, label: string, en: string, tag: string, family: MotifFamily, prefer: Placement[], extra: Partial<SeasonalMotif> = {}): SeasonalMotif => ({ id, label, en, tag, family, prefer, validation: "unverified", ...extra });
+type MotifExtra = Partial<SeasonalMotif> & { form: MotifForm; fusion: FusionRisk };
+const m = (id: string, label: string, en: string, tag: string, family: MotifFamily, prefer: Placement[], extra: MotifExtra): SeasonalMotif => ({ id, label, en, tag, family, prefer, validation: "unverified", ...extra });
+const low: FusionRisk = { level: "low", kinds: [] };
+const NAI_1030 = "2026-10-30";
 
 /* ------------------------------------------------------------------ */
 /* 1. 新規モチーフ（既存9件とは役割が重ならないものだけ）                     */
@@ -94,43 +142,43 @@ const m = (id: string, label: string, en: string, tag: string, family: MotifFami
 
 export const seasonalMotifs: SeasonalMotif[] = [
   // 春
-  m("scattered_cherry_blossom_petals", "桜の花びら", "scattered cherry blossom petals", "cherry blossoms, petals", "spring", ["upper", "edges", "corners"], { kw: "さくら 桜 はなびら 花見 はなみ" }),
-  m("fresh_green_leaf_sprigs", "若葉の小枝", "small sprigs of fresh green leaves", "fresh green leaves, leaf sprigs", "spring", ["corners", "upper", "edges"], { kw: "わかば 新緑 しんりょく 葉 は" }),
+  m("scattered_cherry_blossom_petals", "桜の花びら", "scattered cherry blossom petals", "cherry blossoms, petals", "spring", ["upper", "edges", "corners"], { kw: "さくら 桜 はなびら 花見 はなみ", form: "phenomenon", fusion: low }),
+  m("fresh_green_leaf_sprigs", "若葉の小枝", "small sprigs of fresh green leaves", "fresh green leaves, leaf sprigs", "spring", ["corners", "upper", "edges"], { kw: "わかば 新緑 しんりょく 葉 は", form: "object", fusion: low }),
   // 夏
-  m("tiny_paper_lanterns", "提灯", "tiny Japanese paper lanterns", "paper lanterns", "summer", ["upper", "edges"], { kw: "ちょうちん 夏祭り なつまつり", culture: "japan", conflicts: ["small_red_chinese_lanterns"] }),
-  m("tiny_firework_bursts", "花火", "tiny stylized firework bursts", "fireworks", "summer", ["upper", "corners"], { kw: "はなび 夏祭り", conflicts: ["small_stars", "subtle_sparkles"], note: "星・きらきらと一緒だと光の点が混ざりやすいので、花火だけがおすすめです。" }),
-  m("tiny_uchiwa_fans", "うちわ", "tiny uchiwa fans", "uchiwa", "summer", ["corners", "edges"], { kw: "うちわ 団扇 夏", note: "人物が手に持つ小物として描かれることがあります。" }),
-  m("bamboo_leaf_sprigs", "笹", "slender bamboo grass sprigs", "bamboo leaves", "summer", ["upper", "edges", "corners"], { kw: "ささ 笹 たなばた 七夕 竹" }),
-  m("five_color_tanzaku_paper_strips", "短冊", "blank five-color tanzaku paper strips", "tanzaku", "summer", ["upper", "edges"], { kw: "たんざく 七夕", textRisk: true }),
+  m("tiny_paper_lanterns", "提灯", "tiny Japanese paper lanterns", "paper lanterns", "summer", ["upper", "edges"], { kw: "ちょうちん 夏祭り なつまつり", culture: "japan", conflicts: ["small_red_chinese_lanterns"], form: "object", fusion: { level: "medium", kinds: ["held_item", "oversize"] }, sepEn: "tiny flat paper lantern illustrations", sepTag: "paper lantern illustrations" }),
+  m("tiny_firework_bursts", "花火", "tiny stylized firework bursts", "fireworks", "summer", ["upper", "corners"], { kw: "はなび 夏祭り", conflicts: ["small_stars", "subtle_sparkles"], note: "星・きらきらと一緒だと光の点が混ざりやすいので、花火だけがおすすめです。", form: "phenomenon", fusion: { level: "medium", kinds: ["oversize"] }, sepEn: "tiny flat firework burst illustrations", sepTag: "small firework illustrations" }),
+  m("tiny_uchiwa_fans", "うちわ", "tiny uchiwa fans", "uchiwa", "summer", ["corners", "edges"], { kw: "うちわ 団扇 夏", form: "object", fusion: { level: "high", kinds: ["held_item"] }, sepEn: "tiny flat uchiwa fan stickers", sepTag: "uchiwa stickers", advice: "うちわが人物の手に持たれることがあります。背景の小さなステッカーとして書くと、分かれやすくなる可能性があります。" }),
+  m("bamboo_leaf_sprigs", "笹", "slender bamboo grass sprigs", "bamboo leaves", "summer", ["upper", "edges", "corners"], { kw: "ささ 笹 たなばた 七夕 竹", form: "object", fusion: { level: "medium", kinds: ["oversize"], observed: { date: NAI_1030, target: "NovelAI", note: "笹が人物のすぐ後ろに大きく描かれた" } }, sepEn: "small flat bamboo leaf sprig illustrations", sepTag: "small bamboo leaf illustrations", advice: "笹が人物のすぐ後ろに大きく描かれることがあります。背景の端の小さな装飾として書くと、大きさを抑えやすくなる可能性があります。" }),
+  m("five_color_tanzaku_paper_strips", "短冊", "blank five-color tanzaku paper strips", "tanzaku", "summer", ["upper", "edges"], { kw: "たんざく 七夕", textRisk: true, form: "object", fusion: { level: "high", kinds: ["held_item"], observed: { date: NAI_1030, target: "NovelAI", note: "短冊が人物の手元に描かれた" } }, sepEn: "small hanging blank tanzaku paper-strip ornaments", sepTag: "hanging tanzaku decorations", advice: "短冊が人物の手元に出ることがあります。背景上部の吊り飾りとして書くと、分かれやすくなる可能性があります。" }),
   // 秋
-  m("small_maple_leaves", "もみじ", "small red maple leaves", "maple leaves, autumn leaves", "autumn", ["edges", "corners", "upper"], { kw: "もみじ 紅葉 こうよう 葉" }),
-  m("round_moon_ornament", "月", "small round moon motifs", "moon", "autumn", ["upper", "corners"], { kw: "つき 月 お月見 おつきみ 十五夜 満月" }),
-  m("silver_grass_sprigs", "ススキ", "slender Japanese silver grass sprigs", "silver grass", "autumn", ["edges", "corners"], { kw: "すすき ススキ 芒 お月見", note: "ススキは英語で Japanese silver grass。pampas grass は別の植物です。" }),
-  m("tsukimi_dango", "月見団子", "small stacks of white tsukimi dango", "tsukimi dango", "autumn", ["corners"], { kw: "つきみだんご 団子 だんご お月見" }),
-  m("smiling_jack_o_lantern", "ジャック・オ・ランタン", "small smiling jack-o'-lanterns", "jack-o'-lantern", "autumn", ["corners", "upper"], { kw: "じゃっくおらんたん かぼちゃ カボチャ ハロウィン" }),
-  m("tiny_bat_silhouettes", "コウモリ", "tiny bat silhouettes", "tiny bats, silhouette", "autumn", ["upper", "edges"], { kw: "こうもり 蝙蝠 ハロウィン" }),
-  m("small_black_cat_silhouettes", "黒猫", "small black cat silhouettes", "black cat silhouette", "autumn", ["corners"], { kw: "くろねこ 猫 ねこ ハロウィン", note: "大きく描かれると人物のペットのように見えることがあります。まばらがおすすめです。" }),
+  m("small_maple_leaves", "もみじ", "small red maple leaves", "maple leaves, autumn leaves", "autumn", ["edges", "corners", "upper"], { kw: "もみじ 紅葉 こうよう 葉", form: "phenomenon", fusion: low }),
+  m("round_moon_ornament", "月", "small round moon motifs", "moon", "autumn", ["upper", "corners"], { kw: "つき 月 お月見 おつきみ 十五夜 満月", form: "object", fusion: { level: "medium", kinds: ["oversize"], observed: { date: NAI_1030, target: "NovelAI", note: "月が人物の背後に大きな円として描かれた（人物との融合はなし）" } }, sepEn: "a small flat moon illustration", sepTag: "small moon illustration", advice: "月が人物の背後に大きく描かれることがあります。背景の隅の小さな平面イラストとして書くと、大きさを抑えやすくなる可能性があります。" }),
+  m("silver_grass_sprigs", "ススキ", "slender Japanese silver grass sprigs", "silver grass", "autumn", ["edges", "corners"], { kw: "すすき ススキ 芒 お月見", note: "ススキは英語で Japanese silver grass。pampas grass は別の植物です。", form: "object", fusion: low }),
+  m("tsukimi_dango", "月見団子", "small stacks of white tsukimi dango", "tsukimi dango", "autumn", ["corners"], { kw: "つきみだんご 団子 だんご お月見", form: "object", fusion: { level: "medium", kinds: ["held_item"] }, sepEn: "small flat tsukimi dango illustrations", sepTag: "dango illustrations" }),
+  m("smiling_jack_o_lantern", "ジャック・オ・ランタン", "small smiling jack-o'-lanterns", "jack-o'-lantern", "autumn", ["corners", "edges"], { kw: "じゃっくおらんたん かぼちゃ カボチャ ハロウィン", form: "object", fusion: { level: "high", kinds: ["head_body", "costume"], observed: { date: NAI_1030, target: "NovelAI", note: "1boy の指定で、人物がかぼちゃ顔の幽霊のような姿になった" } }, sepEn: "small flat cartoon jack-o'-lantern stickers", sepTag: "jack-o'-lantern stickers", advice: "かぼちゃが人物の顔や頭部として描かれることがあります。小さな背景ステッカーとして書く方法を試せます。" }),
+  m("tiny_bat_silhouettes", "コウモリ", "tiny bat silhouettes", "bat silhouettes", "autumn", ["upper", "corners", "edges"], { kw: "こうもり 蝙蝠 ハロウィン", form: "flat", fusion: { level: "medium", kinds: ["costume", "creature"] }, sepEn: "tiny flat bat silhouette stickers", sepTag: "bat silhouette stickers" }),
+  m("small_black_cat_silhouettes", "黒猫", "small black cat silhouettes", "black cat silhouette", "autumn", ["corners"], { kw: "くろねこ 猫 ねこ ハロウィン", form: "flat", fusion: { level: "high", kinds: ["creature", "costume"] }, sepEn: "small flat black cat stickers", sepTag: "black cat stickers", advice: "黒猫が人物のペットとして大きく描かれたり、猫耳のように人物へ混ざったりすることがあります。背景の小さなステッカーとして書くと、分かれやすくなる可能性があります。" }),
   // 冬
-  m("snowflake_motifs", "雪の結晶", "six-branched snowflake motifs", "snowflakes", "winter", ["corners", "upper", "scattered"], { kw: "ゆきのけっしょう 雪 ゆき 冬 結晶", conflicts: ["small_stars"] }),
-  m("icicle_trim", "つらら", "short icicle trim", "icicles", "winter", ["upper", "edges"], { kw: "つらら 氷 こおり 冬", conflicts: ["lace_trim"] }),
-  m("holly_sprigs", "ヒイラギ", "small holly sprigs with red berries", "holly", "winter", ["corners", "upper"], { kw: "ひいらぎ 柊 クリスマス" }),
-  m("bauble_ornaments", "オーナメント", "tiny round bauble ornaments", "christmas ornaments", "winter", ["upper", "edges"], { kw: "おーなめんと クリスマス 飾り 玉" }),
-  m("shimenawa_rope_with_shide", "しめ縄", "shimenawa rope trim with zigzag paper streamers", "shimenawa, shide", "winter", ["upper"], { kw: "しめなわ 注連縄 紙垂 しで お正月 正月", culture: "japan", conflicts: ["small_kadomatsu"], note: "しめ縄は上側、門松は四隅向きです。置く場所は全体で1つなので、どちらか1つがおすすめです。" }),
-  m("small_kadomatsu", "門松", "small kadomatsu ornaments of pine and bamboo", "kadomatsu", "winter", ["corners"], { kw: "かどまつ 門松 お正月 正月", culture: "japan", conflicts: ["shimenawa_rope_with_shide"] }),
+  m("snowflake_motifs", "雪の結晶", "six-branched snowflake motifs", "snowflakes", "winter", ["corners", "upper", "scattered"], { kw: "ゆきのけっしょう 雪 ゆき 冬 結晶", conflicts: ["small_stars"], form: "phenomenon", fusion: { level: "medium", kinds: ["costume"] }, sepEn: "small flat snowflake illustrations", sepTag: "snowflake illustrations" }),
+  m("icicle_trim", "つらら", "short icicle trim", "icicles", "winter", ["upper", "edges"], { kw: "つらら 氷 こおり 冬", conflicts: ["lace_trim"], form: "frame", fusion: low }),
+  m("holly_sprigs", "ヒイラギ", "small holly sprigs with red berries", "holly", "winter", ["corners", "upper"], { kw: "ひいらぎ 柊 クリスマス", form: "object", fusion: { level: "medium", kinds: ["costume"] }, sepEn: "small flat holly sprig illustrations", sepTag: "holly illustrations" }),
+  m("bauble_ornaments", "オーナメント", "tiny round bauble ornaments", "christmas ornaments", "winter", ["upper", "edges"], { kw: "おーなめんと クリスマス 飾り 玉", form: "object", fusion: { level: "medium", kinds: ["costume", "held_item"] }, sepEn: "tiny flat bauble illustrations", sepTag: "ornament illustrations" }),
+  m("shimenawa_rope_with_shide", "しめ縄", "shimenawa rope trim with zigzag paper streamers", "shimenawa, shide", "winter", ["upper"], { kw: "しめなわ 注連縄 紙垂 しで お正月 正月", culture: "japan", conflicts: ["small_kadomatsu"], note: "しめ縄は上側、門松は四隅向きです。置く場所は全体で1つなので、どちらか1つがおすすめです。", form: "frame", fusion: low }),
+  m("small_kadomatsu", "門松", "small kadomatsu ornaments of pine and bamboo", "kadomatsu", "winter", ["corners"], { kw: "かどまつ 門松 お正月 正月", culture: "japan", conflicts: ["shimenawa_rope_with_shide"], form: "object", fusion: { level: "medium", kinds: ["oversize"] }, sepEn: "small flat kadomatsu illustrations", sepTag: "kadomatsu illustrations" }),
   // お祝い・通年
-  m("tiny_wrapped_candy_motifs", "キャンディ", "tiny wrapped candy motifs", "wrapped candy", "celebration", ["corners", "scattered"], { kw: "きゃんでぃ あめ 飴 ホワイトデー お菓子" }),
-  m("tiny_marshmallow_motifs", "マシュマロ", "tiny marshmallow motifs", "marshmallow", "celebration", ["corners"], { kw: "ましゅまろ ホワイトデー お菓子", conflicts: ["little_clouds"], note: "小さな雲と一緒だと見分けにくくなります。" }),
-  m("slim_lit_birthday_candles", "キャンドル", "slim lit birthday candles", "candles", "celebration", ["upper", "corners"], { kw: "きゃんどる ろうそく 誕生日 たんじょうび バースデー", textRisk: true, note: "ケーキや文字入りカードに寄ることがあります。" }),
-  m("tiny_triangular_pennant_bunting", "ペナント", "tiny triangular pennant bunting", "bunting, pennant", "celebration", ["upper"], { kw: "ぺなんと ガーランド 三角旗 誕生日 パーティー", textRisk: true }),
-  m("tiny_paper_confetti_pieces", "紙吹雪", "tiny paper confetti pieces", "confetti", "celebration", ["upper", "edges", "scattered"], { kw: "かみふぶき 紙ふぶき お祝い パーティー" }),
-  m("blank_diploma_scroll", "卒業証書", "small blank diploma scrolls", "diploma", "celebration", ["corners"], { kw: "そつぎょうしょうしょ 卒業 そつぎょう 証書", textRisk: true }),
+  m("tiny_wrapped_candy_motifs", "キャンディ", "tiny wrapped candy motifs", "wrapped candy", "celebration", ["corners", "scattered"], { kw: "きゃんでぃ あめ 飴 ホワイトデー お菓子", form: "object", fusion: { level: "medium", kinds: ["held_item", "costume"] }, sepEn: "tiny flat wrapped candy stickers", sepTag: "candy stickers" }),
+  m("tiny_marshmallow_motifs", "マシュマロ", "tiny marshmallow motifs", "marshmallow", "celebration", ["corners"], { kw: "ましゅまろ ホワイトデー お菓子", conflicts: ["little_clouds"], note: "小さな雲と一緒だと見分けにくくなります。", form: "object", fusion: { level: "medium", kinds: ["held_item"] }, sepEn: "tiny flat marshmallow stickers", sepTag: "marshmallow stickers" }),
+  m("slim_lit_birthday_candles", "キャンドル", "slim lit birthday candles", "candles", "celebration", ["corners", "edges"], { kw: "きゃんどる ろうそく 誕生日 たんじょうび バースデー", textRisk: true, form: "object", fusion: { level: "high", kinds: ["head_body", "held_item"], observed: { date: NAI_1030, target: "NovelAI", note: "人物の頭がキャンドルのようになった（利用者の報告。画像は未共有）" } }, sepEn: "tiny flat candle illustrations", sepTag: "candle illustrations", advice: "キャンドルが人物の持ち物や頭部の装飾として描かれることがあります。背景のフレーム装飾として書くと、分かれやすくなる可能性があります。" }),
+  m("tiny_triangular_pennant_bunting", "ペナント", "tiny triangular pennant bunting", "bunting, pennant", "celebration", ["upper"], { kw: "ぺなんと ガーランド 三角旗 誕生日 パーティー", textRisk: true, form: "frame", fusion: low }),
+  m("tiny_paper_confetti_pieces", "紙吹雪", "tiny paper confetti pieces", "confetti", "celebration", ["upper", "edges", "scattered"], { kw: "かみふぶき 紙ふぶき お祝い パーティー", form: "phenomenon", fusion: low }),
+  m("blank_diploma_scroll", "卒業証書", "small blank diploma scrolls", "diploma", "celebration", ["corners"], { kw: "そつぎょうしょうしょ 卒業 そつぎょう 証書", textRisk: true, form: "object", fusion: { level: "high", kinds: ["held_item"] }, sepEn: "small flat blank diploma scroll illustrations", sepTag: "diploma illustrations", advice: "卒業証書が人物の手に持たれることがあります。背景の隅の小さな平面イラストとして書くと、分かれやすくなる可能性があります。" }),
   // 海外・文化行事
-  m("painted_eggs", "イースターエッグ", "small pastel painted eggs", "easter egg", "world", ["corners"], { kw: "いーすたー たまご 卵 エッグ" }),
-  m("small_red_chinese_lanterns", "赤い提灯（春節）", "small red Chinese lanterns with gold tassels", "red lantern, chinese lantern", "world", ["upper", "corners"], { kw: "あかいちょうちん 春節 しゅんせつ 旧正月", culture: "china", conflicts: ["tiny_paper_lanterns"] }),
-  m("small_red_chinese_knot_ornaments", "中国結び", "small red Chinese knot ornaments", "chinese knot", "world", ["edges", "corners"], { kw: "ちゅうごくむすび 結び 春節", culture: "china", note: "髪飾りやアクセサリーとして描かれることがあります。" }),
-  m("diya_lamps", "ディヤ（灯明）", "small diya oil lamps with soft flames", "diya, oil lamp", "world", ["edges", "corners"], { kw: "でぃや ランプ 灯り ディワリ", culture: "india" }),
-  m("rangoli_motifs", "ランゴリ模様", "small symmetrical rangoli motifs", "rangoli", "world", ["corners", "edges"], { kw: "らんごり 模様 ディワリ", culture: "india" }),
-  m("small_rainbow_arc", "小さな虹", "small rainbow arc motifs", "rainbow", "world", ["upper", "corners"], { kw: "にじ 虹 レインボー プライド" }),
+  m("painted_eggs", "イースターエッグ", "small pastel painted eggs", "easter egg", "world", ["corners"], { kw: "いーすたー たまご 卵 エッグ", form: "object", fusion: { level: "medium", kinds: ["held_item"] }, sepEn: "small flat painted egg stickers", sepTag: "easter egg stickers" }),
+  m("small_red_chinese_lanterns", "赤い提灯（春節）", "small red Chinese lanterns with gold tassels", "red lantern, chinese lantern", "world", ["upper", "corners"], { kw: "あかいちょうちん 春節 しゅんせつ 旧正月", culture: "china", conflicts: ["tiny_paper_lanterns"], form: "object", fusion: { level: "medium", kinds: ["held_item", "oversize"] }, sepEn: "small flat red lantern illustrations", sepTag: "red lantern illustrations" }),
+  m("small_red_chinese_knot_ornaments", "中国結び", "small red Chinese knot ornaments", "chinese knot", "world", ["edges", "corners"], { kw: "ちゅうごくむすび 結び 春節", culture: "china", form: "object", fusion: { level: "medium", kinds: ["costume"] }, sepEn: "small flat red Chinese knot illustrations", sepTag: "chinese knot illustrations" }),
+  m("diya_lamps", "ディヤ（灯明）", "small diya oil lamps with soft flames", "diya, oil lamp", "world", ["edges", "corners"], { kw: "でぃや ランプ 灯り ディワリ", culture: "india", form: "object", fusion: { level: "medium", kinds: ["held_item"] }, sepEn: "small flat diya lamp illustrations", sepTag: "diya lamp illustrations" }),
+  m("rangoli_motifs", "ランゴリ模様", "small symmetrical rangoli motifs", "rangoli", "world", ["corners", "edges"], { kw: "らんごり 模様 ディワリ", culture: "india", form: "print", fusion: low }),
+  m("small_rainbow_arc", "小さな虹", "small rainbow arc motifs", "rainbow", "world", ["upper", "corners"], { kw: "にじ 虹 レインボー プライド", form: "phenomenon", fusion: { level: "medium", kinds: ["oversize"] }, sepEn: "a small flat rainbow arc illustration", sepTag: "small rainbow illustration" }),
 ];
 
 export const motifFamilies: { id: MotifFamily; label: string }[] = [
@@ -167,7 +215,7 @@ export const eventThemes: EventTheme[] = [
   { id: "new_year", label: "お正月", kw: "おしょうがつ 正月 新年 しんねん 元日", group: "winter", period: "12月末〜1月上旬", motifs: ["shimenawa_rope_with_shide", "small_kadomatsu"], reuse: ["tiny_flowers"], starter: ["shimenawa_rope_with_shide"], placement: "upper", profiles: ["japanese_paper", "simple_elegant", "classic_holiday"], note: "しめ縄は上側、門松は四隅向きです。置く場所は全体で1つなので、どちらか1つがおすすめです。" },
   { id: "valentine", label: "バレンタイン", kw: "ばれんたいん 2月14日", group: "winter", period: "2月14日", motifs: [], reuse: ["tiny_hearts", "lace_trim", "ribbons"], starter: ["tiny_hearts", "lace_trim"], placement: "edges", profiles: ["pastel_pop", "yume_kawaii", "candy_pastel", "classic_holiday", "simple_elegant"] },
   // 通年
-  { id: "birthday", label: "誕生日・記念日", kw: "たんじょうび バースデー 記念日 きねんび お祝い", group: "allyear", period: "通年", motifs: ["slim_lit_birthday_candles", "tiny_triangular_pennant_bunting", "tiny_paper_confetti_pieces"], reuse: ["subtle_sparkles", "ribbons"], starter: ["tiny_triangular_pennant_bunting", "slim_lit_birthday_candles"], placement: "upper", profiles: ["celebration_clean", "pastel_pop", "retro_pop", "sticker_seal", "holographic_sparkle"], note: TEXT_NOTE },
+  { id: "birthday", label: "誕生日・記念日", kw: "たんじょうび バースデー 記念日 きねんび お祝い", group: "allyear", period: "通年", motifs: ["slim_lit_birthday_candles", "tiny_triangular_pennant_bunting", "tiny_paper_confetti_pieces"], reuse: ["subtle_sparkles", "ribbons"], starter: ["tiny_triangular_pennant_bunting", "tiny_paper_confetti_pieces"], placement: "upper", profiles: ["celebration_clean", "pastel_pop", "retro_pop", "sticker_seal", "holographic_sparkle"], note: TEXT_NOTE },
   // 海外・文化行事（別パック扱い。ほかの文化の記号を自動では混ぜない）
   { id: "easter", label: "イースター", kw: "いーすたー 復活祭 春", group: "world", period: "春（年により移動）", motifs: ["painted_eggs"], reuse: ["tiny_flowers"], starter: ["painted_eggs", "tiny_flowers"], placement: "corners", profiles: ["pastel_pop", "yume_kawaii", "sticker_seal", "spring_botanical"] },
   { id: "lunar_new_year", label: "春節", kw: "しゅんせつ 旧正月 ルナニューイヤー", group: "world", period: "1〜2月頃（旧暦の新年）", motifs: ["small_red_chinese_lanterns", "small_red_chinese_knot_ornaments"], reuse: [], starter: ["small_red_chinese_lanterns"], placement: "upper", profiles: ["classic_holiday", "simple_elegant"], note: "春節の飾りだけにしています。日本の提灯・正月飾りとは混ぜず、文字の入る飾り（春聯・福の字）は入れていません。" },
@@ -190,18 +238,18 @@ export const eventGroups: { id: EventGroup; label: string }[] = [
 
 export const designProfiles: DesignProfile[] = [
   { id: "pastel_pop", label: "パステルポップ", description: "淡いピンクとクリーム", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "pastel_pink", secondary: "cream", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow", "gentle_blur"] }, en: "", tag: "" },
-  { id: "vivid_pop", label: "ビビッドポップ", description: "濃い地に明るい差し色", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "peach", intensity: "medium" }, rendering: ["radial_gradient", "soft_glow"] }, en: "bright pop accent colors", tag: "colorful" },
-  { id: "yume_kawaii", label: "ゆめかわ", description: "ラベンダーの淡い光", patch: { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"] }, en: "a dreamy iridescent pastel sheen", tag: "pastel colors, dreamy" },
-  { id: "retro_pop", label: "レトロポップ", description: "水玉と温かい色", patch: { style: "purikura", backgroundType: "pattern", pattern: "polka_dots", colors: { primary: "peach", secondary: "cream", intensity: "medium" }, rendering: ["flat", "subtle_variation"] }, en: "a retro print feel", tag: "retro style" },
-  { id: "holographic_sparkle", label: "ホログラム", description: "水色とラベンダーの反射", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "powder_blue", secondary: "lavender", intensity: "soft" }, rendering: ["diagonal_gradient", "soft_glow", "light_bloom"] }, en: "a subtle holographic shimmer", tag: "holographic" },
+  { id: "vivid_pop", label: "ビビッドポップ", description: "濃い地に明るい差し色", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "peach", intensity: "medium" }, rendering: ["radial_gradient", "soft_glow"] }, en: "bright pop accent colors", tag: "colorful accents" },
+  { id: "yume_kawaii", label: "ゆめかわ", description: "ラベンダーの淡い光", patch: { style: "purikura", backgroundType: "soft_abstract", colors: { primary: "lavender", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["center_glow", "gentle_blur", "light_bloom"] }, en: "a dreamy iridescent pastel sheen", tag: "dreamy pastel background" },
+  { id: "retro_pop", label: "レトロポップ", description: "水玉と温かい色", patch: { style: "purikura", backgroundType: "pattern", pattern: "polka_dots", colors: { primary: "peach", secondary: "cream", intensity: "medium" }, rendering: ["flat", "subtle_variation"] }, en: "a retro print feel", tag: "retro print background" },
+  { id: "holographic_sparkle", label: "ホログラム", description: "水色とラベンダーの反射", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "powder_blue", secondary: "lavender", intensity: "soft" }, rendering: ["diagonal_gradient", "soft_glow", "light_bloom"] }, en: "a subtle holographic shimmer", tag: "holographic background" },
   { id: "simple_elegant", label: "シンプルで上品", description: "クリームに金を少し", patch: { style: "plain", backgroundType: "solid", colors: { primary: "cream", secondary: "gold", intensity: "very_light" }, rendering: ["subtle_variation", "vignette"] }, en: "", tag: "" },
   { id: "dark_kawaii", label: "ダークかわいい", description: "濃紺に淡い差し色", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "lavender", intensity: "dark" }, rendering: ["vignette", "center_glow", "soft_glow"] }, en: "soft pastel accents against the dark backdrop", tag: "" },
-  { id: "sticker_seal", label: "ステッカー風", description: "白地にシール風の装飾", patch: { style: "purikura", backgroundType: "solid", colors: { primary: "white", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["flat"] }, en: "decorations drawn as sticker-like cutouts with white outlines", tag: "sticker, white outline", decorationOnly: true },
-  { id: "japanese_paper", label: "和紙・和モダン", description: "紙の質感に金", patch: { style: "plain", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "gold", intensity: "very_light" }, rendering: ["subtle_variation"] }, en: "a washi paper feel", tag: "washi" },
-  { id: "festival_night", label: "夜祭りの灯り", description: "紺に暖かな光", patch: { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "gold", intensity: "dark" }, rendering: ["radial_gradient", "soft_glow", "light_bloom"] }, en: "a warm lantern-like glow", tag: "warm glow" },
-  { id: "winter_crystal", label: "氷晶・淡雪", description: "水色と白の澄んだ冬", patch: { style: "soft", backgroundType: "gradient", colors: { primary: "powder_blue", secondary: "white", intensity: "very_light" }, rendering: ["vertical_gradient", "gentle_blur", "light_bloom"] }, en: "a faint frosted shimmer", tag: "frost" },
-  { id: "candy_pastel", label: "キャンディパステル", description: "白とミントの甘い色", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "white", secondary: "mint", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow"] }, en: "a glossy candy-like sheen", tag: "candy colors" },
-  { id: "classic_holiday", label: "クラシックホリデー", description: "ボルドーのベルベットに金", patch: { style: "plain", backgroundType: "texture", texture: "velvet", colors: { primary: "burgundy", secondary: "gold", intensity: "deep" }, rendering: ["vignette", "center_glow"] }, en: "subtle gold foil accents", tag: "gold trim" },
+  { id: "sticker_seal", label: "ステッカー風", description: "白地にシール風の装飾", patch: { style: "purikura", backgroundType: "solid", colors: { primary: "white", secondary: "pastel_pink", intensity: "very_light" }, rendering: ["flat"] }, en: "decorations drawn as sticker-like cutouts with white outlines", tag: "sticker-style decorations", decorationOnly: true },
+  { id: "japanese_paper", label: "和紙・和モダン", description: "紙の質感に金", patch: { style: "plain", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "gold", intensity: "very_light" }, rendering: ["subtle_variation"] }, en: "a washi paper feel", tag: "washi paper background" },
+  { id: "festival_night", label: "夜祭りの灯り", description: "紺に暖かな光", patch: { style: "soft", backgroundType: "gradient", colors: { primary: "deep_navy", secondary: "gold", intensity: "dark" }, rendering: ["radial_gradient", "soft_glow", "light_bloom"] }, en: "a warm lantern-like glow", tag: "warm glowing background" },
+  { id: "winter_crystal", label: "氷晶・淡雪", description: "水色と白の澄んだ冬", patch: { style: "soft", backgroundType: "gradient", colors: { primary: "powder_blue", secondary: "white", intensity: "very_light" }, rendering: ["vertical_gradient", "gentle_blur", "light_bloom"] }, en: "a faint frosted shimmer", tag: "frosted background" },
+  { id: "candy_pastel", label: "キャンディパステル", description: "白とミントの甘い色", patch: { style: "purikura", backgroundType: "gradient", colors: { primary: "white", secondary: "mint", intensity: "very_light" }, rendering: ["diagonal_gradient", "center_glow"] }, en: "a glossy candy-like sheen", tag: "candy-colored background" },
+  { id: "classic_holiday", label: "クラシックホリデー", description: "ボルドーのベルベットに金", patch: { style: "plain", backgroundType: "texture", texture: "velvet", colors: { primary: "burgundy", secondary: "gold", intensity: "deep" }, rendering: ["vignette", "center_glow"] }, en: "subtle gold foil accents", tag: "gold foil accents" },
   { id: "spring_botanical", label: "植物の淡彩", description: "セージとクリームの淡い地", patch: { style: "soft", backgroundType: "soft_abstract", colors: { primary: "sage", secondary: "cream", intensity: "very_light" }, rendering: ["subtle_variation", "gentle_blur"] }, en: "", tag: "" },
   { id: "autumn_harvest", label: "秋色の紙もの", description: "クリームの紙にボルドー", patch: { style: "plain", backgroundType: "texture", texture: "paper", colors: { primary: "cream", secondary: "burgundy", intensity: "very_light" }, rendering: ["subtle_variation", "vignette"] }, en: "", tag: "" },
   { id: "celebration_clean", label: "クリーンなお祝い", description: "白いスタジオ地", patch: { style: "plain", backgroundType: "studio", colors: { primary: "white", secondary: "powder_blue", intensity: "very_light" }, rendering: ["flat", "center_glow"] }, en: "", tag: "" },
@@ -213,6 +261,8 @@ export const designProfiles: DesignProfile[] = [
 
 export const seasonalMotifIds = new Set(seasonalMotifs.map((item) => item.id));
 export const isSeasonalMotif = (id: string) => seasonalMotifIds.has(id);
+/** 人物と混ざるおそれがある（medium 以上）モチーフか */
+export const isFusionRisk = (id: string) => { const level = seasonalMotifs.find((item) => item.id === id)?.fusion.level; return level === "medium" || level === "high"; };
 export const seasonalMotifById = (id: string) => seasonalMotifs.find((item) => item.id === id);
 export const eventById = (id: string | undefined) => (id ? eventThemes.find((item) => item.id === id) : undefined);
 export const profileById = (id: string | undefined) => (id ? designProfiles.find((item) => item.id === id) : undefined);
