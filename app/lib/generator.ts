@@ -344,11 +344,41 @@ function novelaiScene(state: BackgroundState, style: OutputStyle, active: ViewSt
 const SEP_PLACE_NATURAL: Record<string, string> = { upper: "along the upper border of the background", edges: "along the outer border of the background", corners: "in the corners of the background", scattered: "scattered across the background" };
 /** タグ系：主語のない句（concentrated toward the top など）は人物にも掛かるので、装飾の句として書く */
 const SEASONAL_PLACE_TAG: Record<string, string> = { upper: "decorations along the top border", edges: "decorations along the border", corners: "decorations in the corners", scattered: "scattered decorations" };
+/** v2.4 試験機能：「border」は画像の外枠（額縁）と読まれることがあるため、使わない書き方も比べられるようにする */
+const SEASONAL_PLACE_TAG_EDGE: Record<string, string> = { upper: "decorations at the top of the background", edges: "decorations along the edges of the background", corners: "decorations in the corners of the background", scattered: "scattered decorations" };
 const CENTER_NATURAL = "leaving the center open";
 const CENTER_PERSON = "leaving an open central space for the character";
 const SEPARATION_SENTENCE = "The decorations stay flat on the background, apart from the character";
 
-function simpleParts(state: BackgroundState) {
+/* ---- v2.4 試験機能（比較用。既定の出力は変えない） ---- */
+export type BgKeyword = "simple" | "none" | "decorative" | "portrait" | "simple_decorative";
+export type DecorForm = "default" | "stickers" | "printed" | "illustrations";
+export type PlaceWording = "border" | "edge";
+export type LabOptions = { bgKeyword?: BgKeyword; decorForm?: DecorForm; placeWording?: PlaceWording };
+export const bgKeywordOptions: { id: BgKeyword; code: string; label: string; tag: string }[] = [
+  { id: "simple", code: "A", label: "現行", tag: "simple background" },
+  { id: "none", code: "B", label: "キーワードなし", tag: "" },
+  { id: "decorative", code: "C", label: "装飾背景を明示", tag: "decorative background" },
+  { id: "portrait", code: "D", label: "人物向けの背景を明示", tag: "portrait backdrop" },
+  { id: "simple_decorative", code: "E", label: "追加候補", tag: "simple decorative backdrop" },
+];
+export const decorFormOptions: { id: DecorForm; label: string }[] = [
+  { id: "default", label: "既定（v2.3のまま）" },
+  { id: "stickers", label: "stickers" },
+  { id: "printed", label: "printed motifs" },
+  { id: "illustrations", label: "decorative illustrations" },
+];
+export const placeWordingOptions: { id: PlaceWording; label: string }[] = [
+  { id: "border", label: "既定（border を使う）" },
+  { id: "edge", label: "border を使わない" },
+];
+const DECOR_FORM_TAG: Record<Exclude<DecorForm, "default">, (base: string) => string> = {
+  stickers: (base) => `${base} stickers`,
+  printed: (base) => `printed ${base} motifs`,
+  illustrations: (base) => `decorative ${base} illustrations`,
+};
+
+function simpleParts(state: BackgroundState, lab: LabOptions = {}) {
   const s = state.simple;
   const primary = en(simpleData.colors, s.colors.primary);
   const secondary = en(simpleData.colors, s.colors.secondary);
@@ -361,7 +391,12 @@ function simpleParts(state: BackgroundState) {
   // v2.3：人物と混ざりやすい季節モチーフがあり、人物を描く設定で「分ける」がオンなら、背景の小さな平面装飾として書く
   const separated = motifIds.length > 0 && s.subjectRelation !== "background_only" && s.decorSeparation !== false && motifIds.some(isFusionRisk);
   const motifs = motifIds.map((id) => (separated && seasonalMotifById(id)?.sepEn) || en(simpleData.motifs, id)).filter(Boolean);
-  const motifTags = motifIds.map((id) => (separated && seasonalMotifById(id)?.sepTag) || tagOf(simpleData.motifs, id)).filter(Boolean);
+  const formTag = (id: string) => {
+    const motif = seasonalMotifById(id);
+    if (!separated || !motif?.sepTag) return "";
+    return lab.decorForm && lab.decorForm !== "default" && motif.sepBase ? DECOR_FORM_TAG[lab.decorForm](motif.sepBase) : motif.sepTag;
+  };
+  const motifTags = motifIds.map((id) => formTag(id) || tagOf(simpleData.motifs, id)).filter(Boolean);
   const density = motifs.length ? en(simpleData.decorationDensities, s.decoration.density) : "";
   // v2.2：テイストの一言（既存の項目で表せないものだけ）。テイスト未選択なら空で、従来の出力と同じになる
   const profile = profileById(s.designProfile);
@@ -374,10 +409,13 @@ function simpleParts(state: BackgroundState) {
   // 分けるときは「おまかせ」でも背景のフチに置く
   const placementId = separated ? s.decoration.placement || "edges" : s.decoration.placement;
   const placement = !motifs.length ? "" : separated ? SEP_PLACE_NATURAL[placementId] : en(simpleData.placements, placementId);
-  const placementTag = !motifs.length || !placementId ? "" : seasonal ? SEASONAL_PLACE_TAG[placementId] : en(simpleData.placements, placementId);
+  const placementTag = !motifs.length || !placementId ? "" : seasonal ? (lab.placeWording === "edge" ? SEASONAL_PLACE_TAG_EDGE : SEASONAL_PLACE_TAG)[placementId] : en(simpleData.placements, placementId);
   const keepCenter = seasonal && ["edges", "corners", "upper"].includes(placementId) && ["character_focus", "soft_blend"].includes(s.subjectRelation);
   const center = keepCenter ? (separated ? CENTER_PERSON : CENTER_NATURAL) : "";
-  return { s, primary, secondary, color, type, pattern, texture, render, motifs, motifTags, placement, placementTag, density, profileHint, profileTag, seasonal, separated, center, character: en(simpleData.styles, s.style), relation: en(simpleData.relations, s.subjectRelation) };
+  // 試験機能の背景キーワードは、季節装飾を人物向けに使うときだけ効かせる（背景のみ・通常のシンプル背景は現行のまま）
+  const labActive = seasonal && s.subjectRelation !== "background_only";
+  const baseTag = labActive && lab.bgKeyword ? bgKeywordOptions.find((item) => item.id === lab.bgKeyword)?.tag ?? "simple background" : "simple background";
+  return { s, primary, secondary, color, type, pattern, texture, render, motifs, motifTags, placement, placementTag, density, profileHint, profileTag, seasonal, separated, center, labActive, baseTag, character: en(simpleData.styles, s.style), relation: en(simpleData.relations, s.subjectRelation) };
 }
 
 /** 装飾の句。分けるときは量を後ろに回し（kept sparse）、単数のモチーフ（a small flat moon illustration）とも読めるようにする */
@@ -409,15 +447,15 @@ function tsubakiSimple(state: BackgroundState, style: OutputStyle, negativeHandl
 }
 
 /** タグ系：配置・量は詳細版だけ（従来どおり）。季節のモチーフを選んだときだけ、短縮版にも入れる（人物に重ならないように） */
-function tagSimple(state: BackgroundState, style: OutputStyle, novelai: boolean) {
-  const p = simpleParts(state);
+function tagSimple(state: BackgroundState, style: OutputStyle, novelai: boolean, lab: LabOptions = {}) {
+  const p = simpleParts(state, lab);
   const s = p.s;
   const typeTag: Record<string, string> = { solid: "", gradient: "gradient background", soft_abstract: "abstract background", studio: "studio background", pattern: "", texture: "" };
   const colorTags = [p.primary ? `${p.primary} background` : "", p.secondary ? `${p.secondary} background` : ""];
   const withLayout = style === "detailed" || p.seasonal;
   const items = [
     s.subjectRelation === "background_only" ? "no humans" : "",
-    "simple background",
+    p.baseTag,
     ...colorTags,
     typeTag[s.backgroundType] || "",
     s.backgroundType === "pattern" ? tagOf(simpleData.patterns, s.pattern) : "",
@@ -474,7 +512,7 @@ function negativePrompt(state: BackgroundState): string | null {
 /* 公開API                                                            */
 /* ------------------------------------------------------------------ */
 
-export function generateOutput(input: BackgroundState, style: OutputStyle = input.outputStyle): PromptResult {
+export function generateOutput(input: BackgroundState, style: OutputStyle = input.outputStyle, lab: LabOptions = {}): PromptResult {
   // 旧形式のまま渡された場合も、移行してから生成する（画面では読み込み時に移行済み）
   const state = input.version === 2 && input.target && input.scene?.view ? input : migrateState(input);
   const negative = negativePrompt(state);
@@ -484,8 +522,8 @@ export function generateOutput(input: BackgroundState, style: OutputStyle = inpu
 
   if (state.backgroundMode === "simple") {
     const positive = platform === "pixai" && pixaiModel === "tsubaki" ? tsubakiSimple(state, style, negativeHandlesPeople)
-      : platform === "pixai" ? tagSimple(state, style, false)
-      : platform === "novelai" ? tagSimple(state, style, true)
+      : platform === "pixai" ? tagSimple(state, style, false, lab)
+      : platform === "novelai" ? tagSimple(state, style, true, lab)
       : genericSimple(state, style);
     const p = simpleParts(state);
     if (p.separated) notes.push("人物と混ざりやすいモチーフを、背景のフチの小さな平面装飾として書いています（「人物と装飾を分ける」）。");
@@ -501,6 +539,16 @@ export function generateOutput(input: BackgroundState, style: OutputStyle = inpu
   if (platform === "pixai") return { positive: pixaiTagScene(state, style, active), negative, notes };
   if (platform === "novelai") return { positive: novelaiScene(state, style, active), negative, notes };
   return { positive: genericScene(state, style, active), negative, notes };
+}
+
+/** v2.4 試験機能：今の設計で、背景キーワード A〜E の出力を並べる（タグ系の生成先だけ。人物と装飾を分けるはオンで固定） */
+export function labVariants(input: BackgroundState, style: OutputStyle = input.outputStyle, lab: Omit<LabOptions, "bgKeyword"> = {}): { id: BgKeyword; code: string; label: string; tag: string; positive: string }[] {
+  const state = input.version === 2 && input.target && input.scene?.view ? input : migrateState(input);
+  const tagTarget = state.target.platform === "novelai" || (state.target.platform === "pixai" && state.target.pixaiModel === "tag");
+  if (state.backgroundMode !== "simple" || !tagTarget) return [];
+  const fixed: BackgroundState = { ...state, simple: { ...state.simple, decorSeparation: true } };
+  if (!simpleParts(fixed).labActive) return [];
+  return bgKeywordOptions.map((option) => ({ ...option, positive: generateOutput(fixed, style, { ...lab, bgKeyword: option.id }).positive }));
 }
 
 export function generateScenePrompt(state: BackgroundState, style: OutputStyle = state.outputStyle) {

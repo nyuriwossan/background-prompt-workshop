@@ -6,7 +6,10 @@ import { enforceExclusions, getAdvice } from "./lib/advisor.ts";
 import type { Advice } from "./lib/advisor.ts";
 import { basicMotifIds, createDefaultState, optionById, optionsForGroup, presetGroups, presets, sceneData, simpleData } from "./lib/background-data.ts";
 import type { BackgroundMode, BackgroundState, Option, PresetGroup } from "./lib/background-data.ts";
-import { generateOutput, japaneseSummary, negativeItemAvailability, negativeOptions, negativeSupport } from "./lib/generator.ts";
+import { decorFormOptions, generateOutput, japaneseSummary, labVariants, negativeItemAvailability, negativeOptions, negativeSupport, placeWordingOptions } from "./lib/generator.ts";
+import type { DecorForm, PlaceWording } from "./lib/generator.ts";
+import { labChecks, labModels, labRecordsToCsv, labVariantCodes, parseLabRecords, personPrompts, summarizeLab } from "./lib/lab-log.ts";
+import type { LabCheckId, LabModel, LabRecord, LabVariantCode, PersonPrompt } from "./lib/lab-log.ts";
 import { clearActiveMode, clearConfirmationMessage, defaultsConfirmationMessage, exportDesign, exportLibrary, mergeSavedLists, migrateSavedList, migrateState, parseImportedJson, resetActiveMode } from "./lib/state-utils.ts";
 import type { SavedDesign } from "./lib/state-utils.ts";
 import { dynamicMotions, motionProfiles, viewData, viewFromRecipe, viewRecipes } from "./lib/view-data.ts";
@@ -17,6 +20,12 @@ import { designProfiles, eventById, eventGroups, eventMotifIds, eventThemes, fus
 const DRAFT_KEY = "background_prompt_workshop_draft_v1";
 const SAVED_KEY = "background_prompt_workshop_saved_v1";
 const BACKUP_KEY = "background_prompt_workshop_backup_before_v2";
+// v2.4 試験機能：比較の設定と実画像テストの記録（設計の保存・JSON書き出しとは分ける）
+const LAB_SETTINGS_KEY = "background_prompt_workshop_lab_settings_v1";
+const LAB_LOG_KEY = "background_prompt_workshop_lab_log_v1";
+type LabSettings = { decorForm: DecorForm; placeWording: PlaceWording };
+type LabDraft = { model: LabModel; person: PersonPrompt; variant: LabVariantCode; seed: string; note: string; checks: Record<LabCheckId, boolean> };
+const emptyChecks = () => Object.fromEntries(labChecks.map((check) => [check.id, false])) as Record<LabCheckId, boolean>;
 
 type ChoiceItem = { id: string; label: string };
 
@@ -106,6 +115,9 @@ export default function Home() {
   const [structureQuery, setStructureQuery] = useState("");
   const [showAllStructures, setShowAllStructures] = useState(false);
   const [showAllMotifs, setShowAllMotifs] = useState(false);
+  const [labSettings, setLabSettings] = useState<LabSettings>({ decorForm: "default", placeWording: "border" });
+  const [labRecords, setLabRecords] = useState<LabRecord[]>([]);
+  const [labDraft, setLabDraft] = useState<LabDraft>({ model: "novelai", person: "rich", variant: "A", seed: "", note: "", checks: emptyChecks() });
   /** リセット時に設定欄を作り直し、折りたたみ・入力中の検索語などの一時的な表示状態も初期化する */
   const [builderKey, setBuilderKey] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
@@ -125,15 +137,24 @@ export default function Home() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (draft) setState(enforceExclusions(migrateState(JSON.parse(draft))));
       if (stored) setSaved(migrateSavedList(JSON.parse(stored)));
+      const labStored = localStorage.getItem(LAB_SETTINGS_KEY);
+      if (labStored) {
+        const parsed = JSON.parse(labStored);
+        setLabSettings({ decorForm: decorFormOptions.some((item) => item.id === parsed?.decorForm) ? parsed.decorForm : "default", placeWording: parsed?.placeWording === "edge" ? "edge" : "border" });
+      }
+      const labLog = localStorage.getItem(LAB_LOG_KEY);
+      if (labLog) setLabRecords(parseLabRecords(JSON.parse(labLog)));
     } catch { message = "保存データの一部を読み込めませんでした"; }
     if (message) setToast(message);
     setHydrated(true);
   }, []);
   useEffect(() => { if (hydrated) try { localStorage.setItem(DRAFT_KEY, JSON.stringify(state)); } catch { /* 容量不足などは無視して続ける */ } }, [state, hydrated]);
   useEffect(() => { if (hydrated) try { localStorage.setItem(SAVED_KEY, JSON.stringify(saved)); } catch { /* 同上 */ } }, [saved, hydrated]);
+  useEffect(() => { if (hydrated) try { localStorage.setItem(LAB_SETTINGS_KEY, JSON.stringify(labSettings)); localStorage.setItem(LAB_LOG_KEY, JSON.stringify(labRecords)); } catch { /* 同上 */ } }, [labSettings, labRecords, hydrated]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 2600); return () => window.clearTimeout(timer); }, [toast]);
 
   const result = useMemo(() => generateOutput(state), [state]);
+  const variants = useMemo(() => labVariants(state, state.outputStyle, labSettings), [state, labSettings]);
   const advice = useMemo(() => getAdvice(state), [state]);
   const availability = useMemo(() => getViewAvailability(state), [state]);
   const negativeInfo = negativeSupport(state);
@@ -194,6 +215,20 @@ export default function Home() {
     if (!profile) { update("simple.designProfile", ""); return; }
     setState((current) => enforceExclusions({ ...current, simple: { ...current.simple, ...clone(profile.patch), pattern: profile.patch.pattern || "", texture: profile.patch.texture || "", designProfile: id } }));
     setToast(`「${profile.label}」の色と質感にしました`);
+  };
+  const copyVariant = (code: LabVariantCode, text: string) => {
+    setLabDraft((draft) => ({ ...draft, variant: code }));
+    copy(text, `方式${code}をコピーしました`);
+  };
+  const addLabRecord = () => {
+    const record: LabRecord = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...labDraft, decorForm: labDraft.variant === "T" ? "default" : labSettings.decorForm, placeWording: labDraft.variant === "T" ? "border" : labSettings.placeWording, eventTheme: simple.eventTheme };
+    setLabRecords((records) => [record, ...records]);
+    setLabDraft((draft) => ({ ...draft, seed: "", note: "", checks: emptyChecks() }));
+    setToast("検証メモに記録しました");
+  };
+  const exportLabCsv = () => {
+    const csv = "\uFEFF" + labRecordsToCsv([...labRecords].reverse(), { event: (id) => eventById(id)?.label || "" });
+    const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "background-workshop-lab.csv"; link.click(); URL.revokeObjectURL(url); setToast("CSVを書き出しました");
   };
   const applyRecipe = (id: string) => {
     const next = viewFromRecipe(id); if (!next) return;
@@ -290,6 +325,10 @@ export default function Home() {
   const hiddenMotifCount = moreMotifGroups.reduce((sum, group) => sum + group.options.length, 0);
   const motifNotes = simple.decoration.enabled ? simple.decoration.motifs.map(seasonalMotifById).filter((item) => item?.note).map((item) => ({ id: item!.id, text: `${item!.label}：${item!.note}` })) : [];
   const fusionMotifs = simple.decoration.enabled && simple.subjectRelation !== "background_only" ? simple.decoration.motifs.map(seasonalMotifById).filter((item) => item && item.fusion.level !== "low") : [];
+  // 季節の装飾を、人物を描く背景として使っているか（人物プロンプトの案内と試験機能を出す条件）
+  const seasonalPerson = state.backgroundMode === "simple" && simple.decoration.enabled && simple.decoration.motifs.length > 0 && (Boolean(activeEvent) || simple.decoration.motifs.some((id) => Boolean(seasonalMotifById(id)))) && simple.subjectRelation !== "background_only";
+  const tagTarget = target.platform === "novelai" || (target.platform === "pixai" && target.pixaiModel === "tag");
+  const labSummary = summarizeLab(labRecords);
   const orderedProfiles = activeEvent ? [...activeEvent.profiles.map((id) => profileById(id)!).filter(Boolean), ...designProfiles.filter((item) => !activeEvent.profiles.includes(item.id))] : designProfiles;
   const eventSummary = activeEvent ? `${activeEvent.label}（${activeEvent.period}）` : "選ばない（ふだんのシンプル背景）";
 
@@ -315,6 +354,12 @@ export default function Home() {
     <button type="button" className="primary-button" onClick={copyPrompt}>プロンプトをコピー</button>
     <p className="target-note">{targetLabel}向け{state.outputStyle === "short" ? "・短縮版" : "・詳細版"}。{target.platform === "generic" ? "従来どおりの英文です。" : target.platform === "novelai" ? "見え方を先頭に置いたタグと短い句です。" : target.pixaiModel === "tsubaki" ? "どこから何を見ているかを1文目に書いています。" : "場所と見え方のタグを前の方に置いています。"}</p>
     {result.notes.map((note) => <p key={note} className="target-note">{note}</p>)}
+    {seasonalPerson && <details className="combine-help">
+      <summary>人物プロンプトと組み合わせるときは</summary>
+      <p>人物を描きたい場合は、人物用プロンプトで人数・構図・容姿・服装などを指定してください。人物指定が少ないと、背景モチーフが主役になったり、衣装へ混ざったりする場合があります。このプロンプトは背景専用です。</p>
+      <p className="combine-example">{target.platform === "novelai" ? <>NovelAI：人物のタグを先に書き、このプロンプトを後ろにつなげます。V4以降は、人物をキャラクタープロンプト欄、背景をベースプロンプトに分けて入れる方法もあります。<br />例：<code>1boy, solo, upper body, looking at viewer, casual clothes, </code>＋この背景</> : target.platform === "pixai" && target.pixaiModel === "tag" ? <>PIXAIタグ系：人物のタグを先に、背景のタグを後ろに並べます。<br />例：<code>1boy, solo, upper body, looking at viewer, casual clothes, </code>＋この背景</> : target.platform === "pixai" ? <>PIXAI Tsubaki系：人物を説明する文を先に書き、この背景の文を後ろに続けます。<br />例：<code>A young man in casual clothes, shown from the chest up, looking at the viewer. </code>＋この背景</> : <>人物の指定を先に書き、この背景を後ろにつなげます。</>}</p>
+      <p className="choice-note">例の人物指定は、組み合わせ方を示すためのものです。工房の出力には入りません。</p>
+    </details>}
 
     {target.platform === "novelai" && state.backgroundMode === "scene" && <div className="output-option"><Toggle checked={target.novelaiEmphasis} onChange={(value) => update("target.novelaiEmphasis", value)}>見え方を少し強める（1.2::〜::）</Toggle><small>NovelAI V4以降の数値強調。見え方を細かく指定したときだけ使います。</small></div>}
     {target.platform === "pixai" && target.pixaiModel === "tsubaki" && <div className="output-option"><Toggle checked={target.tsubakiProMode} onChange={(value) => update("target.tsubakiProMode", value)}>Pro・Ultraモードで使う</Toggle><small>Lite・Standardではネガティブ欄を編集できないため、オフのときはネガティブを作りません。</small></div>}
@@ -327,6 +372,38 @@ export default function Home() {
         <p className="target-note">{negativeInfo.reason}</p>
       </>}
     </div> : <p className="target-note muted">{negativeInfo.reason}</p>}
+
+    {seasonalPerson && <details className="lab-panel">
+      <summary><span>試験機能</span>背景キーワードの比較と検証メモ</summary>
+      <p className="choice-note">季節の装飾を人物向けに使うときの、比較用の出力です。上のプロンプト（既定＝方式A）は変わりません。比較では「人物と装飾を分ける」をオンに固定し、色・モチーフ・位置・量はそのままです。</p>
+      {tagTarget ? <>
+        <ChoiceGroup label="装飾の書き方" options={decorFormOptions} value={labSettings.decorForm} onChange={(id) => setLabSettings((current) => ({ ...current, decorForm: id as DecorForm }))} />
+        <ChoiceGroup label="位置の書き方" options={placeWordingOptions} value={labSettings.placeWording} onChange={(id) => setLabSettings((current) => ({ ...current, placeWording: id as PlaceWording }))} note="border は画像の外枠（額縁）として描かれることがあります。" />
+        <ol className="variant-list">{variants.map((item) => <li key={item.id}>
+          <div className="variant-head"><b>{item.code}</b><span>{item.label}{item.tag ? <code>{item.tag}</code> : null}</span><button type="button" onClick={() => copyVariant(item.code as LabVariantCode, item.positive)}>コピー</button></div>
+          <p>{item.positive}</p>
+        </li>)}</ol>
+      </> : <p className="target-note">比較はNovelAI・PIXAIタグ系向けです。Tsubaki系は自然文の別方式なので、記録するときは方式「T」として分けてください。</p>}
+      <div className="lab-form">
+        <strong>検証メモ（1枚ごとに記録）</strong>
+        <ChoiceGroup label="生成先" options={labModels} value={labDraft.model} onChange={(id) => setLabDraft((draft) => ({ ...draft, model: id as LabModel }))} />
+        <ChoiceGroup label="人物指定" options={personPrompts} value={labDraft.person} onChange={(id) => setLabDraft((draft) => ({ ...draft, person: id as PersonPrompt }))} note={personPrompts.find((item) => item.id === labDraft.person)?.example || undefined} />
+        <ChoiceGroup label="方式" options={labVariantCodes.map((code) => ({ id: code, label: code === "T" ? "T（Tsubaki・既定）" : code }))} value={labDraft.variant} onChange={(id) => setLabDraft((draft) => ({ ...draft, variant: id as LabVariantCode }))} />
+        <label className="lab-input">seed<input value={labDraft.seed} onChange={(event) => setLabDraft((draft) => ({ ...draft, seed: event.target.value }))} inputMode="numeric" placeholder="例：123456" /></label>
+        <ChoiceGroup label="結果（当てはまるものを選ぶ）" options={labChecks} value={labChecks.filter((check) => labDraft.checks[check.id]).map((check) => check.id)} multi onChange={(id) => setLabDraft((draft) => ({ ...draft, checks: { ...draft.checks, [id]: !draft.checks[id as LabCheckId] } }))} />
+        <label className="lab-input">メモ<input value={labDraft.note} onChange={(event) => setLabDraft((draft) => ({ ...draft, note: event.target.value }))} placeholder="例：かぼちゃが瞳に入った" /></label>
+        <button type="button" className="primary-button" onClick={addLabRecord}>この1枚を記録する</button>
+      </div>
+      {labRecords.length > 0 && <div className="lab-summary">
+        <strong>集計（{labRecords.length}枚）</strong>
+        <div className="lab-table-wrap"><table><thead><tr><th>生成先</th><th>方式</th><th>人物</th><th>枚数</th><th>全項目○</th><th>混ざりなし</th><th>人物あり</th></tr></thead><tbody>
+          {labSummary.map((row) => <tr key={row.key}><td>{labModels.find((item) => item.id === row.model)?.label}</td><td>{row.variant}{row.variant !== "T" && (row.decorForm !== "default" || row.placeWording !== "border") ? <small>{[row.decorForm !== "default" ? row.decorForm : "", row.placeWording === "edge" ? "borderなし" : ""].filter(Boolean).join("・")}</small> : null}{eventById(row.eventTheme) ? <small>{eventById(row.eventTheme)!.label}</small> : null}</td><td>{row.person === "thin" ? "少" : row.person === "rich" ? "厚" : "他"}</td><td>{row.count}</td><td>{row.allGood}</td><td>{row.byCheck.noFusion}</td><td>{row.byCheck.person}</td></tr>)}
+        </tbody></table></div>
+        {labSummary.some((row) => row.count < 3) && <p className="choice-note">3枚未満の条件は、偶然の成功・失敗の可能性が高いです。seedを変えて数を増やしてください。</p>}
+        <div className="lab-tools"><button type="button" onClick={exportLabCsv}>CSVで書き出す</button><button type="button" className="danger" onClick={() => { if (window.confirm("検証メモをすべて消しますか？（設計の保存一覧は消えません）")) setLabRecords([]); }}>記録を消す</button></div>
+        <ul className="lab-records">{labRecords.slice(0, 8).map((record) => <li key={record.id}><span>{labModels.find((item) => item.id === record.model)?.label}・{record.variant}・seed {record.seed || "—"}</span><span>{labChecks.filter((check) => !record.checks[check.id]).map((check) => `×${check.label}`).join("・") || "全項目○"}</span><button type="button" aria-label="この記録を削除" onClick={() => setLabRecords((records) => records.filter((item) => item.id !== record.id))}>×</button></li>)}</ul>
+      </div>}
+    </details>}
 
     <div className="advice-area"><div className="advice-heading"><strong>設計アドバイス</strong><span>{advice.length || "✓"}</span></div>{advice.length ? advice.slice(0, 4).map((item) => <AdviceCard key={item.id} advice={item} onApply={applyAdvice} />) : <div className="all-good"><span>✓</span><p><strong>きれいにまとまっています</strong><small>大きな矛盾はありません</small></p></div>}</div>
     <div className="output-secondary"><button type="button" onClick={() => setSaveOpen(true)}>この設計を保存</button><button type="button" onClick={() => exportJson(false)}>JSONで書き出す</button></div>

@@ -1114,3 +1114,93 @@ test("v2.3 advisor: one fusion notice only when separation is off, with a one-ta
   const upper = halloween(); upper.simple.decoration.placement = "upper";
   assert.equal(getAdvice(upper).find((item) => item.id === "motif-placement")?.patch?.value, "corners");
 });
+
+/* ------------------------------------------------------------------ */
+/* v2.4：simple background の比較（試験機能）                              */
+/* ------------------------------------------------------------------ */
+
+import { labVariants } from "../app/lib/generator.ts";
+import { labRecordsToCsv, parseLabRecords, summarizeLab } from "../app/lib/lab-log.ts";
+
+test("v2.4. the default output is unchanged; variant A is exactly the current output", () => {
+  for (const preset of seasonalPresetList) for (const [platform, model] of ALL_TARGETS) for (const style of ["short", "detailed"] as const) {
+    const state = withTarget(applyPreset(preset.id), platform, model);
+    assert.equal(generateOutput(state, style, {}).positive, generateOutput(state, style).positive, preset.id);
+    const variants = labVariants(state, style);
+    if (platform === "generic" || model === "tsubaki" && platform === "pixai") { assert.deepEqual(variants, [], "自然文の生成先は比較対象外"); continue; }
+    assert.deepEqual(variants.map((item) => item.code), ["A", "B", "C", "D", "E"]);
+    assert.equal(variants[0].positive, generateOutput(state, style).positive, `${preset.id} ${platform}/${style}`);
+  }
+});
+
+test("v2.4. variants change only the base keyword and keep type, colors, motifs, placement and density", () => {
+  const state = withTarget(applyPreset("pastel_halloween"), "novelai");
+  const [a, b, c, d, e] = labVariants(state, "short").map((item) => item.positive);
+  const rest = a.replace(/^simple background, /, "");
+  assert.equal(b, rest);
+  assert.equal(c, `decorative background, ${rest}`);
+  assert.equal(d, `portrait backdrop, ${rest}`);
+  assert.equal(e, `simple decorative backdrop, ${rest}`);
+  for (const out of [a, b, c, d, e]) {
+    assert.match(out, /lavender background, peach background, gradient background/, "背景タイプの指定は消えない");
+    assert.match(out, /jack-o'-lantern stickers, bat silhouette stickers, decorations in the corners, sparse decorations/);
+    assert.equal(new Set(out.split(", ")).size, out.split(", ").length, `重複なし：${out}`);
+  }
+  // 背景タイプのタグと同じ語でも重複しない（studio background + portrait backdrop など）
+  const studio = labVariants(withTarget(applyPreset("birthday_candles"), "pixai", "tag"), "detailed");
+  for (const item of studio) assert.match(item.positive, /studio background/, item.code);
+  // 比較では「人物と装飾を分ける」をオンに固定する
+  const off = withTarget(applyPreset("pastel_halloween"), "novelai"); off.simple.decorSeparation = false;
+  assert.match(labVariants(off, "short")[0].positive, /jack-o'-lantern stickers/);
+});
+
+test("v2.4. variants appear only for seasonal character backgrounds on tag targets", () => {
+  assert.deepEqual(labVariants(withTarget({ ...applyPreset("pink_purikura"), backgroundMode: "simple" }, "novelai")), [], "イベントなしの通常背景");
+  const only = withTarget(applyPreset("pastel_halloween"), "novelai"); only.simple.subjectRelation = "background_only";
+  assert.deepEqual(labVariants(only), [], "背景だけで使う");
+  // 背景のみでは、試験の指定を渡しても portrait backdrop などを入れない
+  assert.doesNotMatch(generateOutput(only, "short", { bgKeyword: "portrait" }).positive, /portrait backdrop/);
+  assert.match(generateOutput(only, "short", { bgKeyword: "portrait" }).positive, /^no humans, simple background/);
+  const off = withTarget(applyPreset("pastel_halloween"), "novelai"); off.simple.decoration.enabled = false;
+  assert.deepEqual(labVariants(off), [], "装飾なし");
+  assert.deepEqual(labVariants({ ...withTarget(applyPreset("pastel_halloween"), "novelai"), backgroundMode: "scene" }), [], "空間背景");
+  // 通常のシンプル背景は、試験の指定を渡しても変わらない
+  const plain = withTarget({ ...applyPreset("lace_ribbon_pink"), backgroundMode: "simple" }, "pixai", "tag");
+  assert.equal(generateOutput(plain, "short", { bgKeyword: "decorative", decorForm: "printed", placeWording: "edge" }).positive, generateOutput(plain, "short").positive);
+});
+
+test("v2.4. motif form and placement wording can be compared without touching the default", () => {
+  const state = withTarget(applyPreset("classic_christmas"), "novelai");
+  const [printed] = labVariants(state, "short", { decorForm: "printed" });
+  assert.match(printed.positive, /printed holly motifs, printed christmas ornament motifs/);
+  const [illustrated] = labVariants(state, "short", { decorForm: "illustrations" });
+  assert.match(illustrated.positive, /decorative holly illustrations, decorative christmas ornament illustrations/);
+  const [stickers] = labVariants(state, "short", { decorForm: "stickers" });
+  assert.match(stickers.positive, /holly stickers, christmas ornament stickers/);
+  const [edge] = labVariants(state, "short", { placeWording: "edge" });
+  assert.match(edge.positive, /decorations at the top of the background/);
+  assert.doesNotMatch(edge.positive, /border/);
+  assert.match(generateOutput(state, "short").positive, /decorations along the top border/, "既定はそのまま");
+  // 低リスクのモチーフ（分ける対象外）は書き方を変えない
+  const [petals] = labVariants(withTarget(applyPreset("sakura_milk"), "novelai"), "short", { decorForm: "printed" });
+  assert.match(petals.positive, /cherry blossoms, petals/);
+  for (const motif of seasonalMotifs.filter((item) => item.fusion.level !== "low")) assert.ok(motif.sepBase, `${motif.id}: 書き方を比べるための名詞`);
+});
+
+test("v2.4 lab log: tolerant parsing, grouping and CSV", () => {
+  const records = parseLabRecords([
+    { id: "1", model: "novelai", person: "rich", variant: "C", seed: "11", eventTheme: "halloween", checks: { person: true, face: true, decor: true, noFusion: true, size: true, season: true } },
+    { id: "2", model: "novelai", person: "rich", variant: "C", seed: "12", eventTheme: "halloween", checks: { person: true, noFusion: false }, note: "瞳に, \"かぼちゃ\"" },
+    { id: "3", model: "unknown", variant: "Z", checks: "broken" },
+    null, 7,
+  ]);
+  assert.equal(records.length, 3);
+  assert.equal(records[2].model, "other"); assert.equal(records[2].variant, "A"); assert.equal(records[2].checks.person, false);
+  const summary = summarizeLab(records);
+  const c = summary.find((row) => row.variant === "C")!;
+  assert.equal(c.count, 2); assert.equal(c.allGood, 1); assert.equal(c.byCheck.noFusion, 1); assert.equal(c.byCheck.person, 2);
+  const csv = labRecordsToCsv(records, { event: (id) => (id === "halloween" ? "ハロウィン" : "") });
+  assert.match(csv.split("\n")[0], /^日時,生成先,人物指定,方式/);
+  assert.match(csv, /NovelAI,人物指定：厚め,C,default,border,ハロウィン,12,○,×,×,×,×,×,"瞳に, ""かぼちゃ"""/);
+  assert.deepEqual(parseLabRecords("broken"), []);
+});

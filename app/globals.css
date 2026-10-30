@@ -281,6 +281,38 @@ button:focus-visible, summary:focus-visible, input:focus-visible, label.toggle:f
 .motif-more-groups .choice-group { margin-bottom: 12px; }
 .motif-more-groups .choice-group legend { font-size: 12px; color: var(--muted); }
 
+/* ---- v2.4 人物プロンプトの案内・試験機能 ---- */
+.combine-help, .lab-panel { margin: 12px 0 0; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-2); }
+.combine-help > summary, .lab-panel > summary { padding: 10px 12px; cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; }
+.combine-help > summary::-webkit-details-marker, .lab-panel > summary::-webkit-details-marker { display: none; }
+.combine-help > summary::before, .lab-panel > summary::before { content: "＋ "; color: var(--accent); }
+.combine-help[open] > summary::before, .lab-panel[open] > summary::before { content: "－ "; }
+.combine-help > p, .lab-panel > p { margin: 0 12px 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.combine-example code, .variant-head code { display: inline; padding: 1px 4px; border-radius: 4px; background: #0b100e; color: var(--text); font-size: 11px; word-break: break-word; }
+.lab-panel > summary span { margin-right: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(240,189,103,.14); color: var(--warning); font-size: 10px; }
+.lab-panel > .choice-group, .lab-panel > .target-note { margin-left: 12px; margin-right: 12px; }
+.variant-list { list-style: none; margin: 0 12px 12px; padding: 0; display: grid; gap: 8px; }
+.variant-list li { padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #0d1311; }
+.variant-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.variant-head b { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.variant-head span { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.variant-head button, .lab-tools button { min-height: 32px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); font-size: 12px; cursor: pointer; }
+.variant-list p { margin: 6px 0 0; color: #c9d1cc; font-size: 11.5px; line-height: 1.55; word-break: break-word; }
+.lab-form, .lab-summary { margin: 0 12px 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.lab-form > strong, .lab-summary > strong { display: block; margin-bottom: 10px; font-size: 13px; }
+.lab-input { display: grid; gap: 4px; margin-bottom: 14px; color: #d5dbd7; font-size: 13px; font-weight: 700; }
+.lab-input input { min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #0b100e; color: var(--text); font-size: 14px; }
+.lab-table-wrap { overflow-x: auto; }
+.lab-summary table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.lab-summary th, .lab-summary td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
+.lab-summary th { color: var(--faint); font-weight: 600; }
+.lab-summary td small { display: block; color: var(--faint); font-size: 10px; }
+.lab-tools { display: flex; gap: 6px; margin: 10px 0; }
+.lab-tools .danger { color: var(--danger); }
+.lab-records { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.lab-records li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.lab-records button { border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 14px; }
+
 @media (max-width: 1100px) {
   .intro { grid-template-columns: 1fr; gap: 20px; }
   .mode-switch { max-width: 600px; }
